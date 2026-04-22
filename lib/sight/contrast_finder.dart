@@ -58,6 +58,18 @@ String formatTimeOfDay(DateTime t) {
   return '${two(loc.hour)}:${two(loc.minute)}:${two(loc.second)}';
 }
 
+/// Contrast after one correct answer: multiply by [stepFactor].
+///
+/// With 0 < [stepFactor] < 1, `log(contrast)` drops by `-log(stepFactor)` each step,
+/// so steps are even in log space and contrast approaches 0 asymptotically.
+double contrastAfterCorrectLogStep(
+  double current, {
+  double stepFactor = 0.85,
+}) {
+  if (current <= 0) return 0;
+  return (current * stepFactor).clamp(0.0, 1.0);
+}
+
 // --- Widget ---
 
 class ContrastFinder extends StatefulWidget {
@@ -70,10 +82,11 @@ class ContrastFinder extends StatefulWidget {
 class _ContrastFinderState extends State<ContrastFinder> {
   final Random _random = Random();
   final TextEditingController _guessController = TextEditingController();
+  final FocusNode _guessFocus = FocusNode();
 
   late Trial _currentTrial;
   bool _finished = false;
-  String _status = 'Enter the letter you see, then tap Submit.';
+  String _status = 'Enter the letter you see, then press Enter (or Submit).';
 
   /// Clock time of the most recent correct guess (after submit).
   DateTime? _lastCorrectAt;
@@ -85,12 +98,22 @@ class _ContrastFinderState extends State<ContrastFinder> {
   void initState() {
     super.initState();
     _currentTrial = randomTrial(_random, 1.0);
+    _refocusGuessField();
   }
 
   @override
   void dispose() {
+    _guessFocus.dispose();
     _guessController.dispose();
     super.dispose();
+  }
+
+  /// Puts the caret in the guess field without an extra click (after frame / trial change).
+  void _refocusGuessField() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _finished) return;
+      _guessFocus.requestFocus();
+    });
   }
 
   /// Read input, compare to current trial, update status and advance or end.
@@ -104,6 +127,7 @@ class _ContrastFinderState extends State<ContrastFinder> {
       setState(() {
         _status = 'Please enter a letter (A–Z).';
       });
+      _refocusGuessField();
       return;
     }
 
@@ -132,17 +156,13 @@ class _ContrastFinderState extends State<ContrastFinder> {
           'Correct at ${formatTimeOfDay(_lastCorrectAt!)}. Advancing to lower contrast.';
       _guessController.clear();
 
-      // We advance to the next contrast level logarithmically
-      final nextContrast = (_currentTrial.contrast - 0.1).clamp(0.0, 1.0);
-      if (nextContrast <= 0) {
-        _finished = true;
-        _currentTrial = Trial(letter: _currentTrial.letter, contrast: nextContrast);
-        _status = 'Reached minimum contrast. Run finished.';
-        return;
-      }
-
+      final nextContrast =
+          contrastAfterCorrectLogStep(_currentTrial.contrast, stepFactor: 0.85);
       _currentTrial = randomTrial(_random, nextContrast);
     });
+    if (!_finished) {
+      _refocusGuessField();
+    }
   }
 
   void _restart() {
@@ -152,8 +172,9 @@ class _ContrastFinderState extends State<ContrastFinder> {
       _lastCorrectAt = null;
       _guessController.clear();
       _currentTrial = randomTrial(_random, 1.0);
-      _status = 'Enter the letter you see, then tap Submit.';
+      _status = 'Enter the letter you see, then press Enter (or Submit).';
     });
+    _refocusGuessField();
   }
 
   @override
@@ -194,11 +215,15 @@ class _ContrastFinderState extends State<ContrastFinder> {
                 const SizedBox(height: 20),
                 TextField(
                   controller: _guessController,
+                  focusNode: _guessFocus,
+                  autofocus: true,
                   enabled: !_finished,
                   textCapitalization: TextCapitalization.characters,
+                  textInputAction: TextInputAction.done,
                   maxLength: 8,
                   decoration: const InputDecoration(
                     labelText: 'Your guess',
+                    helperText: 'Press Enter to submit',
                     border: OutlineInputBorder(),
                     counterText: '',
                   ),
