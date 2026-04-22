@@ -1,0 +1,1 @@
+// This file contains utility and helper functions for capturing session time via timestamps
