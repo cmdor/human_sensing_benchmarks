@@ -4,70 +4,17 @@
 
 // Through the process, find the user's contrast sensitivity in units of percentage. Based on this result, estimate the bit resolution. (For example, 8-bit resolution means 256 available discrete measurements, which correspond to about 4% range per color difference, meaning the smallest color difference you could discriminate is 4%.)
 
-import 'dart:math';
-
 import 'package:flutter/material.dart';
 
-class Trial {
-  const Trial({
-    required this.letter,
-    required this.contrast,
-  });
+import 'dart:math';
 
-  /// The letter displayed for this trial (single uppercase A–Z).
-  final String letter;
-
-  /// Contrast level in the range [0.0, 1.0].
-  final double contrast;
-}
-
-// --- Simple top-level helpers (pure where possible) ---
-
-/// Random uppercase letter A–Z.
-String randomUppercaseLetter(Random random) {
-  return String.fromCharCode(65 + random.nextInt(26));
-}
-
-/// Builds a [Trial] with a random letter at the given contrast (clamped to [0.0, 1.0]).
-Trial randomTrial(Random random, double contrast) {
-  final c = contrast.clamp(0.0, 1.0);
-  return Trial(letter: randomUppercaseLetter(random), contrast: c);
-}
-
-/// First A–Z letter in [raw], uppercased; otherwise null.
-String? firstUppercaseLetter(String raw) {
-  for (final unit in raw.trim().toUpperCase().codeUnits) {
-    if (unit >= 65 && unit <= 90) {
-      return String.fromCharCode(unit);
-    }
-  }
-  return null;
-}
-
-/// True if the user's text identifies the same letter as the trial.
-bool guessEqualsTrialLetter(String rawGuess, Trial trial) {
-  final g = firstUppercaseLetter(rawGuess);
-  if (g == null) return false;
-  return g == trial.letter;
-}
+import '../utils/trials.dart';
 
 /// Local time as HH:MM:SS for display.
 String formatTimeOfDay(DateTime t) {
   final loc = t.toLocal();
   String two(int n) => n.toString().padLeft(2, '0');
   return '${two(loc.hour)}:${two(loc.minute)}:${two(loc.second)}';
-}
-
-/// Contrast after one correct answer: multiply by [stepFactor].
-///
-/// With 0 < [stepFactor] < 1, `log(contrast)` drops by `-log(stepFactor)` each step,
-/// so steps are even in log space and contrast approaches 0 asymptotically.
-double contrastAfterCorrectLogStep(
-  double current, {
-  double stepFactor = 0.85,
-}) {
-  if (current <= 0) return 0;
-  return (current * stepFactor).clamp(0.0, 1.0);
 }
 
 // --- Widget ---
