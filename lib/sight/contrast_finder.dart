@@ -8,14 +8,9 @@ import 'package:flutter/material.dart';
 
 import 'dart:math';
 
-import '../utils/trials.dart';
-
-/// Local time as HH:MM:SS for display.
-String formatTimeOfDay(DateTime t) {
-  final loc = t.toLocal();
-  String two(int n) => n.toString().padLeft(2, '0');
-  return '${two(loc.hour)}:${two(loc.minute)}:${two(loc.second)}';
-}
+import '../utils/trial_framework.dart';
+import '../utils/trial_widgets.dart';
+import 'contrast_trial.dart';
 
 // --- Widget ---
 
@@ -31,20 +26,14 @@ class _ContrastFinderState extends State<ContrastFinder> {
   final TextEditingController _guessController = TextEditingController();
   final FocusNode _guessFocus = FocusNode();
 
-  late Trial _currentTrial;
-  bool _finished = false;
+  late TrialRunner<ContrastTrial, String> _runner;
   String _status = 'Enter the letter you see, then press Enter (or Submit).';
-
-  /// Clock time of the most recent correct guess (after submit).
-  DateTime? _lastCorrectAt;
-
-  /// Wrong answers in a row (valid letter, does not match); ends run at 2.
-  int _wrongStreak = 0;
 
   @override
   void initState() {
     super.initState();
-    _currentTrial = randomTrial(_random, 1.0);
+    _runner = _newRunner();
+    _runner.start();
     _refocusGuessField();
   }
 
@@ -55,17 +44,29 @@ class _ContrastFinderState extends State<ContrastFinder> {
     super.dispose();
   }
 
+  TrialRunner<ContrastTrial, String> _newRunner() {
+    return TrialRunner<ContrastTrial, String>(
+      initialState: TrialRunnerState(
+        startedAt: DateTime.now(),
+        custom: const <String, Object?>{'contrast': 1.0},
+      ),
+      generateTrial: buildContrastGenerator(_random),
+      scoreTrial: contrastScorer(),
+      reduceState: contrastReducer(),
+    );
+  }
+
   /// Puts the caret in the guess field without an extra click (after frame / trial change).
   void _refocusGuessField() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || _finished) return;
+      if (!mounted || _runner.state.finished) return;
       _guessFocus.requestFocus();
     });
   }
 
   /// Read input, compare to current trial, update status and advance or end.
   void _onSubmitGuess() {
-    if (_finished) return;
+    if (_runner.state.finished) return;
 
     final raw = _guessController.text;
     final letter = firstUppercaseLetter(raw);
@@ -78,47 +79,41 @@ class _ContrastFinderState extends State<ContrastFinder> {
       return;
     }
 
-    final wasCorrect = guessEqualsTrialLetter(raw, _currentTrial);
+    final trial = _runner.currentTrial;
+    final score = _runner.submitGuess(raw, guessData: <String, Object?>{'raw': raw});
 
     setState(() {
-      if (!wasCorrect) {
-        _wrongStreak += 1;
-        if (_wrongStreak >= 2) {
-          _finished = true;
-          _status =
-              'Wrong again (2 in a row). You entered "$letter"; displayed was "${_currentTrial.letter}". Run finished.';
-          return;
-        }
-
-        _status =
-            'Wrong (1/2). You entered "$letter"; displayed was "${_currentTrial.letter}". One more wrong ends the run.';
-        _guessController.clear();
-        _currentTrial = randomTrial(_random, _currentTrial.contrast);
+      if (!score.valid) {
+        _status = 'Please enter a letter (A–Z).';
         return;
       }
 
-      _wrongStreak = 0;
-      _lastCorrectAt = DateTime.now();
-      _status =
-          'Correct at ${formatTimeOfDay(_lastCorrectAt!)}. Advancing to lower contrast.';
-      _guessController.clear();
+      if (!score.correct) {
+        final wrongStreak = _runner.state.wrongStreak;
+        if (_runner.state.finished) {
+          _status =
+              'Wrong again (2 in a row). You entered "$letter"; displayed was "${trial.letter}". Run finished.';
+          return;
+        }
+        _status =
+            'Wrong ($wrongStreak/2). You entered "$letter"; displayed was "${trial.letter}".';
+        _guessController.clear();
+        return;
+      }
 
-      final nextContrast =
-          contrastAfterCorrectLogStep(_currentTrial.contrast, stepFactor: 0.85);
-      _currentTrial = randomTrial(_random, nextContrast);
+      final nextContrast = (_runner.state.custom['contrast'] as double?) ?? trial.contrast;
+      _status = 'Correct. Next contrast: ${nextContrast.toStringAsFixed(2)}';
+      _guessController.clear();
     });
-    if (!_finished) {
-      _refocusGuessField();
-    }
+
+    if (!_runner.state.finished) _refocusGuessField();
   }
 
   void _restart() {
     setState(() {
-      _finished = false;
-      _wrongStreak = 0;
-      _lastCorrectAt = null;
       _guessController.clear();
-      _currentTrial = randomTrial(_random, 1.0);
+      _runner = _newRunner();
+      _runner.start();
       _status = 'Enter the letter you see, then press Enter (or Submit).';
     });
     _refocusGuessField();
@@ -126,9 +121,10 @@ class _ContrastFinderState extends State<ContrastFinder> {
 
   @override
   Widget build(BuildContext context) {
+    final trial = _runner.currentTrial;
     final bg = Theme.of(context).colorScheme.surface;
     final fg = Theme.of(context).colorScheme.onSurface;
-    final letterColor = Color.lerp(bg, fg, _currentTrial.contrast) ?? fg;
+    final letterColor = Color.lerp(bg, fg, trial.contrast) ?? fg;
 
     return Scaffold(
       appBar: AppBar(
@@ -142,8 +138,10 @@ class _ContrastFinderState extends State<ContrastFinder> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                SessionStatsBar(runner: _runner),
+                const SizedBox(height: 16),
                 Text(
-                  _currentTrial.letter,
+                  trial.letter,
                   style: TextStyle(
                     fontSize: 96,
                     fontWeight: FontWeight.w700,
@@ -151,20 +149,13 @@ class _ContrastFinderState extends State<ContrastFinder> {
                   ),
                 ),
                 const SizedBox(height: 16),
-                Text('Contrast: ${_currentTrial.contrast.toStringAsFixed(2)}'),
-                if (_lastCorrectAt != null) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    'Last correct: ${formatTimeOfDay(_lastCorrectAt!)}',
-                    style: Theme.of(context).textTheme.labelMedium,
-                  ),
-                ],
+                Text('Contrast: ${trial.contrast.toStringAsFixed(4)}'),
                 const SizedBox(height: 20),
                 TextField(
                   controller: _guessController,
                   focusNode: _guessFocus,
                   autofocus: true,
-                  enabled: !_finished,
+                  enabled: !_runner.state.finished,
                   textCapitalization: TextCapitalization.characters,
                   textInputAction: TextInputAction.done,
                   maxLength: 8,
@@ -178,16 +169,18 @@ class _ContrastFinderState extends State<ContrastFinder> {
                 ),
                 const SizedBox(height: 12),
                 FilledButton(
-                  onPressed: _finished ? null : _onSubmitGuess,
+                  onPressed: _runner.state.finished ? null : _onSubmitGuess,
                   child: const Text('Submit'),
                 ),
+                const SizedBox(height: 12),
+                ExportJsonButton(runner: _runner),
                 const SizedBox(height: 20),
                 Text(
                   _status,
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.bodyMedium,
                 ),
-                if (_finished) ...[
+                if (_runner.state.finished) ...[
                   const SizedBox(height: 16),
                   TextButton(
                     onPressed: _restart,

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 // Import local files that I need to run the app
 import 'sight/smallest_noticeable_size.dart';
+import 'sight/contrast_finder.dart';
 
 void main() {
   runApp(const MyApp());
@@ -33,7 +34,59 @@ class MyApp extends StatelessWidget {
         // tested with just a hot reload.
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
       ),
-      home: const SmallestNoticeableSizePage(),
+      home: const TrialHomePage(),
+    );
+  }
+}
+
+class TrialHomePage extends StatelessWidget {
+  const TrialHomePage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Visual Trials'),
+      ),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Choose a trial:',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 16),
+                FilledButton(
+                  onPressed: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const ContrastFinder(),
+                      ),
+                    );
+                  },
+                  child: const Text('Contrast Finder'),
+                ),
+                const SizedBox(height: 12),
+                FilledButton(
+                  onPressed: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const SmallestNoticeableSizePage(),
+                      ),
+                    );
+                  },
+                  child: const Text('E Rotation Trial'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
