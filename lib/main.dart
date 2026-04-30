@@ -5,6 +5,7 @@ import 'sight/smallest_noticeable_size.dart';
 import 'sight/contrast_finder.dart';
 import 'sight/outcomes_page.dart';
 import 'sound/pitch_frequency_range.dart';
+import 'sound/sound_gap_detection.dart';
 
 void main() {
   runApp(const MyApp());
@@ -105,6 +106,17 @@ class TrialHomePage extends StatelessWidget {
                     );
                   },
                   child: const Text('Pitch Frequency Range'),
+                ),
+                const SizedBox(height: 12),
+                FilledButton.tonal(
+                  onPressed: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const SoundGapDetectionPage(),
+                      ),
+                    );
+                  },
+                  child: const Text('Sound Gap Detection'),
                 ),
               ],
             ),
