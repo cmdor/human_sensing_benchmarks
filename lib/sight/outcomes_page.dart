@@ -57,6 +57,43 @@ class _OutcomesPageState extends State<OutcomesPage> {
       body: FutureBuilder<List<StoredSession>>(
         future: _sessionsFuture,
         builder: (context, snap) {
+          if (snap.hasError) {
+            final err = snap.error;
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 520),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        'Failed to load outcomes.',
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        '$err',
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 12),
+                      const Text(
+                        'If you recently added shared_preferences, do a Hot Restart (or restart flutter run).',
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 16),
+                      FilledButton(
+                        onPressed: _reload,
+                        child: const Text('Retry'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          }
+
           if (!snap.hasData) {
             return const Center(child: CircularProgressIndicator());
           }

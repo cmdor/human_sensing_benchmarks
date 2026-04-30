@@ -153,7 +153,7 @@ class _ContrastFinderState extends State<ContrastFinder> {
         title: const Text('Contrast Finder'),
       ),
       body: Center(
-        child: Padding(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 360),

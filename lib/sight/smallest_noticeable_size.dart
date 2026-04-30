@@ -361,7 +361,7 @@ class _ERotationTrialPageState extends State<_ERotationTrialPage> {
               title: const Text('E Rotation Trial'),
             ),
             body: Center(
-              child: Padding(
+              child: SingleChildScrollView(
                 padding: const EdgeInsets.all(24),
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 520),
@@ -577,15 +577,3 @@ class _BlockEPainter extends CustomPainter {
         oldDelegate.trial.strokeFraction != trial.strokeFraction;
   }
 }
-
-
-// Calculate the dimensions of the letter 'E' at the current scale, based on the screen size, canvas, and etc
-
-
-// Gradually redue the size
-
-
-// Calculate the dimensions of the letter 'E' at the smallest noticeable size.
-
-
-// Calculate the angular resolution of the eye, in arc minutes. (1/60 of a degree)

@@ -134,7 +134,21 @@ class OutcomesSummary extends StatelessWidget {
         const SizedBox(height: 8),
         OutcomesChart(outcomes: items),
         const SizedBox(height: 12),
-        OutcomesTable(outcomes: items),
+        SizedBox(
+          height: 260,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(8),
+              child: SingleChildScrollView(
+                child: OutcomesTable(outcomes: items),
+              ),
+            ),
+          ),
+        ),
       ],
     );
   }

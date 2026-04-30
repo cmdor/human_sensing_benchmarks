@@ -47,36 +47,49 @@ class SessionStore {
   static const String _key = 'trial_sessions_v1';
 
   Future<List<StoredSession>> loadSessions() async {
-    final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_key);
-    if (raw == null || raw.trim().isEmpty) return <StoredSession>[];
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_key);
+      if (raw == null || raw.trim().isEmpty) return <StoredSession>[];
 
-    final decoded = jsonDecode(raw);
-    if (decoded is! List) return <StoredSession>[];
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return <StoredSession>[];
 
-    final List<StoredSession> out = <StoredSession>[];
-    for (final item in decoded) {
-      if (item is Map) {
-        out.add(StoredSession.fromJson(item.cast<String, Object?>()));
+      final List<StoredSession> out = <StoredSession>[];
+      for (final item in decoded) {
+        if (item is Map) {
+          out.add(StoredSession.fromJson(item.cast<String, Object?>()));
+        }
       }
+      return out;
+    } catch (_) {
+      // Allow UI to surface the failure (common if a plugin was added and only
+      // hot-reloaded on web).
+      rethrow;
     }
-    return out;
   }
 
   Future<void> appendSession(SessionReport report, Map<String, Object?> summary) async {
-    final prefs = await SharedPreferences.getInstance();
-    final sessions = await loadSessions();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final sessions = await loadSessions();
 
-    final sessionJson = report.toJson(summary: summary);
-    sessions.add(StoredSession.fromJson(sessionJson));
+      final sessionJson = report.toJson(summary: summary);
+      sessions.add(StoredSession.fromJson(sessionJson));
 
-    final encoded = jsonEncode(sessions.map((s) => s.toJson()).toList(growable: false));
-    await prefs.setString(_key, encoded);
+      final encoded =
+          jsonEncode(sessions.map((s) => s.toJson()).toList(growable: false));
+      await prefs.setString(_key, encoded);
+    } catch (_) {
+      // Best-effort persistence; do not crash trials if storage is unavailable.
+    }
   }
 
   Future<void> clearAll() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_key);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_key);
+    } catch (_) {}
   }
 }
 
