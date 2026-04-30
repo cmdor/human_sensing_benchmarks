@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'sight/smallest_noticeable_size.dart';
 import 'sight/contrast_finder.dart';
 import 'sight/outcomes_page.dart';
+import 'sound/pitch_frequency_range.dart';
 
 void main() {
   runApp(const MyApp());
@@ -93,6 +94,17 @@ class TrialHomePage extends StatelessWidget {
                     );
                   },
                   child: const Text('Outcomes'),
+                ),
+                const SizedBox(height: 12),
+                FilledButton.tonal(
+                  onPressed: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const PitchFrequencyRangePage(),
+                      ),
+                    );
+                  },
+                  child: const Text('Pitch Frequency Range'),
                 ),
               ],
             ),
