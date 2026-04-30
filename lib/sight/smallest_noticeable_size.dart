@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../utils/trial_framework.dart';
+import '../utils/outcomes.dart';
+import '../utils/session_store.dart';
 import '../utils/trial_widgets.dart';
 
 class EGeometry {
@@ -256,6 +258,9 @@ class _ERotationTrialPageState extends State<_ERotationTrialPage> {
 
   EGeometry? _lastGeometry;
   String _status = 'Which way is the E rotated?';
+  List<TrialOutcome> _outcomes = const <TrialOutcome>[];
+  bool _savedSession = false;
+  final SessionStore _store = SessionStore();
 
   @override
   void initState() {
@@ -298,6 +303,20 @@ class _ERotationTrialPageState extends State<_ERotationTrialPage> {
 
       _status = 'Wrong (1/2). Try the next one.';
     });
+
+    if (_runner.state.finished) {
+      _onFinished();
+    }
+  }
+
+  void _onFinished() {
+    if (_savedSession) return;
+    _savedSession = true;
+    final outcomes = deriveOutcomes(_runner.report);
+    setState(() {
+      _outcomes = outcomes;
+    });
+    _store.appendSession(_runner.report, _runner.summaryJson());
   }
 
   void _restart() {
@@ -306,6 +325,8 @@ class _ERotationTrialPageState extends State<_ERotationTrialPage> {
       _runner = _newRunner();
       _runner.start();
       _status = 'Which way is the E rotated?';
+      _outcomes = const <TrialOutcome>[];
+      _savedSession = false;
     });
   }
 
@@ -376,6 +397,7 @@ class _ERotationTrialPageState extends State<_ERotationTrialPage> {
                       ),
                       const SizedBox(height: 12),
                       ExportJsonButton(runner: _runner),
+                      if (_runner.state.finished) OutcomesSummary(outcomes: _outcomes),
                       if (_runner.state.finished) ...[
                         const SizedBox(height: 16),
                         TextButton(

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 // Import local files that I need to run the app
 import 'sight/smallest_noticeable_size.dart';
 import 'sight/contrast_finder.dart';
+import 'sight/outcomes_page.dart';
 
 void main() {
   runApp(const MyApp());
@@ -81,6 +82,17 @@ class TrialHomePage extends StatelessWidget {
                     );
                   },
                   child: const Text('E Rotation Trial'),
+                ),
+                const SizedBox(height: 12),
+                FilledButton.tonal(
+                  onPressed: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const OutcomesPage(),
+                      ),
+                    );
+                  },
+                  child: const Text('Outcomes'),
                 ),
               ],
             ),

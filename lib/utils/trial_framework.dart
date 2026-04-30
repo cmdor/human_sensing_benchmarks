@@ -136,10 +136,12 @@ class TrialRunner<TTrial, TGuess> {
   final SessionReport report;
 
   late TTrial currentTrial;
+  DateTime? _presentedAt;
 
   void start() {
     report.addEvent('session_started');
     currentTrial = _generateTrial(state);
+    _presentedAt = DateTime.now();
     report.addEvent(
       'trial_presented',
       data: <String, Object?>{
@@ -153,12 +155,18 @@ class TrialRunner<TTrial, TGuess> {
       return const TrialScore(correct: false, valid: false);
     }
 
+    final now = DateTime.now();
+    final reactionMs =
+        _presentedAt == null ? null : now.difference(_presentedAt!).inMilliseconds;
+
     report.addEvent(
       'guess_submitted',
       data: <String, Object?>{
         'trialIndex': state.trialIndex,
+        if (reactionMs != null) 'reactionMs': reactionMs,
         if (guessData != null) ...guessData,
       },
+      ts: now,
     );
 
     final score = _scoreTrial(currentTrial, guess);
@@ -168,6 +176,7 @@ class TrialRunner<TTrial, TGuess> {
         'trialIndex': state.trialIndex,
         'correct': score.correct,
         'valid': score.valid,
+        if (reactionMs != null) 'reactionMs': reactionMs,
         ...score.data,
       },
     );
@@ -181,6 +190,7 @@ class TrialRunner<TTrial, TGuess> {
     }
 
     currentTrial = _generateTrial(state);
+    _presentedAt = DateTime.now();
     report.addEvent(
       'trial_presented',
       data: <String, Object?>{

@@ -9,6 +9,8 @@ import 'package:flutter/material.dart';
 import 'dart:math';
 
 import '../utils/trial_framework.dart';
+import '../utils/outcomes.dart';
+import '../utils/session_store.dart';
 import '../utils/trial_widgets.dart';
 import 'contrast_trial.dart';
 
@@ -28,6 +30,9 @@ class _ContrastFinderState extends State<ContrastFinder> {
 
   late TrialRunner<ContrastTrial, String> _runner;
   String _status = 'Enter the letter you see, then press Enter (or Submit).';
+  List<TrialOutcome> _outcomes = const <TrialOutcome>[];
+  bool _savedSession = false;
+  final SessionStore _store = SessionStore();
 
   @override
   void initState() {
@@ -106,7 +111,22 @@ class _ContrastFinderState extends State<ContrastFinder> {
       _guessController.clear();
     });
 
+    if (_runner.state.finished) {
+      _onFinished();
+    }
+
     if (!_runner.state.finished) _refocusGuessField();
+  }
+
+  void _onFinished() {
+    if (_savedSession) return;
+    _savedSession = true;
+    final outcomes = deriveOutcomes(_runner.report);
+    setState(() {
+      _outcomes = outcomes;
+    });
+    // Fire-and-forget persist.
+    _store.appendSession(_runner.report, _runner.summaryJson());
   }
 
   void _restart() {
@@ -115,6 +135,8 @@ class _ContrastFinderState extends State<ContrastFinder> {
       _runner = _newRunner();
       _runner.start();
       _status = 'Enter the letter you see, then press Enter (or Submit).';
+      _outcomes = const <TrialOutcome>[];
+      _savedSession = false;
     });
     _refocusGuessField();
   }
@@ -180,6 +202,7 @@ class _ContrastFinderState extends State<ContrastFinder> {
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.bodyMedium,
                 ),
+                if (_runner.state.finished) OutcomesSummary(outcomes: _outcomes),
                 if (_runner.state.finished) ...[
                   const SizedBox(height: 16),
                   TextButton(
