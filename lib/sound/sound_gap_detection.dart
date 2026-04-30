@@ -4,32 +4,30 @@ import 'package:flutter/material.dart';
 
 import '../utils/outcomes.dart';
 import '../utils/session_store.dart';
+import '../utils/staircase.dart';
 import '../utils/trial_framework.dart';
 import '../utils/trial_widgets.dart';
 import 'soloud_tone_player.dart';
 
-class GapOption {
-  const GapOption({
-    required this.id,
-    required this.hasGap,
-  });
-
-  final String id;
-  final bool hasGap;
+int? trialRunnerStateCustomInt(Map<String, Object?> custom, String key) {
+  final v = custom[key];
+  if (v is int) return v;
+  if (v is num) return v.toInt();
+  return null;
 }
 
 class SoundGapTrial {
   const SoundGapTrial({
-    required this.options,
-    required this.gapOptionId,
+    required this.targetIndex,
+    required this.gapMs,
     required this.totalDuration,
     required this.gapStart,
     required this.gapDuration,
     required this.amplitude,
   });
 
-  final List<GapOption> options;
-  final String gapOptionId;
+  final int targetIndex; // 1..3
+  final double gapMs;
   final Duration totalDuration;
   final Duration gapStart;
   final Duration gapDuration;
@@ -37,8 +35,8 @@ class SoundGapTrial {
 }
 
 class SoundGapGuess {
-  const SoundGapGuess(this.selectedOptionId);
-  final String selectedOptionId;
+  const SoundGapGuess(this.selectedIndex);
+  final int selectedIndex; // 1..3
 }
 
 class SoundGapDetectionPage extends StatefulWidget {
@@ -57,53 +55,46 @@ class _SoundGapDetectionPageState extends State<SoundGapDetectionPage> {
   bool _savedSession = false;
   String _status = 'Press an option to play it and select which one had a gap.';
   int? _selectedOptionNumber;
-  late Map<String, int> _playCounts;
+  late List<int> _playCounts; // index 0..2
 
   static const int _numOptions = 3;
   static const Duration _totalDuration = Duration(milliseconds: 900);
-  // Start with a clearly noticeable gap for early testing.
-  static const Duration _gapDurationBase = Duration(milliseconds: 260);
   static const double _amplitude = 0.7;
+  static const double _initialGapMs = 20.0;
+  static const double _minGapMs = 2.0;
+  static const double _maxGapMs = 400.0;
+  static const int _stopAfterReversals = 6;
 
   @override
   void initState() {
     super.initState();
     _runner = _newRunner();
     _runner.start();
-    _playCounts = <String, int>{};
+    _playCounts = List<int>.filled(3, 0, growable: false);
   }
 
   TrialRunner<SoundGapTrial, SoundGapGuess> _newRunner() {
     return TrialRunner<SoundGapTrial, SoundGapGuess>(
-      initialState: TrialRunnerState(startedAt: DateTime.now()),
+      initialState: TrialRunnerState(
+        startedAt: DateTime.now(),
+        custom: Staircase.initialCustom(initialGapMs: _initialGapMs),
+      ),
       generateTrial: (state) {
-        final gapIndex = _random.nextInt(_numOptions);
-        final gapId = 'Option ${gapIndex + 1}';
+        final targetIndex = 1 + _random.nextInt(3);
+        final gapMs = (state.custom[Staircase.kGapMs] as num?)?.toDouble() ?? _initialGapMs;
+        final gapDuration = Duration(milliseconds: gapMs.round().clamp(1, 10000));
 
-        final options = List<GapOption>.generate(_numOptions, (i) {
-          final id = 'Option ${i + 1}';
-          return GapOption(id: id, hasGap: i == gapIndex);
-        });
-
-        // Vary gap size around a "pretty large" default for early testing.
-        // Range derived from base: (base-80) .. (base+60). For 260ms => 180–320ms.
-        final int gapMinMs = max(60, _gapDurationBase.inMilliseconds - 80);
-        final int gapMaxMs = _gapDurationBase.inMilliseconds + 60;
-        final int gapMs = gapMinMs + _random.nextInt((gapMaxMs - gapMinMs) + 1);
-        final Duration gapDuration = Duration(milliseconds: gapMs);
-
-        // Put the gap roughly in the middle, but jitter it slightly so it’s not
-        // always identical.
-        final jitterMs = _random.nextInt(121) - 60; // [-60ms, +60ms]
-        final baseStartMs = (_totalDuration.inMilliseconds / 2).round() - 70;
-        final int latestStartMs =
-            _totalDuration.inMilliseconds - gapDuration.inMilliseconds - 120;
-        final int maxStartMs = max(120, latestStartMs);
-        final int startMs = (baseStartMs + jitterMs).clamp(120, maxStartMs);
+        // Place gap around midpoint; adjust so it fits.
+        final midMs = (_totalDuration.inMilliseconds / 2).round();
+        final int maxStart =
+            _totalDuration.inMilliseconds - gapDuration.inMilliseconds - 80;
+        final int startMs = (midMs - (gapDuration.inMilliseconds / 2))
+            .clamp(80, max(80, maxStart))
+            .toInt();
 
         return SoundGapTrial(
-          options: options,
-          gapOptionId: gapId,
+          targetIndex: targetIndex,
+          gapMs: gapMs,
           totalDuration: _totalDuration,
           gapStart: Duration(milliseconds: startMs),
           gapDuration: gapDuration,
@@ -111,48 +102,75 @@ class _SoundGapDetectionPageState extends State<SoundGapDetectionPage> {
         );
       },
       scoreTrial: (trial, guess) {
-        final correct = guess.selectedOptionId == trial.gapOptionId;
+        final correct = guess.selectedIndex == trial.targetIndex;
+        final reversalCount =
+            (trialRunnerStateCustomInt(_runner.state.custom, Staircase.kReversalCount) ??
+                0);
         return TrialScore(
           correct: correct,
           valid: true,
           data: <String, Object?>{
-            'selected': guess.selectedOptionId,
-            'gapOption': trial.gapOptionId,
+            // Order matters: OutcomesTable shows only first 4 detail keys.
+            'gapMs': trial.gapMs,
             'gapDurationMs': trial.gapDuration.inMilliseconds,
+            'selectedIndex': guess.selectedIndex,
+            'targetIndex': trial.targetIndex,
             'gapStartMs': trial.gapStart.inMilliseconds,
             'totalMs': trial.totalDuration.inMilliseconds,
             'amplitude': trial.amplitude,
-            'playCountOption1': _playCounts['Option 1'] ?? 0,
-            'playCountOption2': _playCounts['Option 2'] ?? 0,
-            'playCountOption3': _playCounts['Option 3'] ?? 0,
+            'reversalCount': reversalCount,
+            'playCount1': _playCounts[0],
+            'playCount2': _playCounts[1],
+            'playCount3': _playCounts[2],
           },
         );
       },
       reduceState: (state, score) {
+        final presentedGapMs = (score.data['gapMs'] as num?)?.toDouble() ??
+            (state.custom[Staircase.kGapMs] as num?)?.toDouble() ??
+            _initialGapMs;
+
+        final update = Staircase.update(
+          custom: state.custom,
+          correct: score.correct,
+          presentedGapMs: presentedGapMs,
+          minGapMs: _minGapMs,
+          maxGapMs: _maxGapMs,
+        );
+
         final total = state.totalScored + 1;
-        final wrongStreak = score.correct ? 0 : (state.wrongStreak + 1);
+        final reversalCount = update.reversalCount;
+        final finished = reversalCount >= _stopAfterReversals;
+
         return state.copyWith(
           trialIndex: state.trialIndex + 1,
           totalScored: total,
           correctScored: state.correctScored + (score.correct ? 1 : 0),
-          wrongStreak: wrongStreak,
+          wrongStreak: score.correct ? 0 : (state.wrongStreak + 1),
           lastCorrectAt: score.correct ? DateTime.now() : state.lastCorrectAt,
-          finished: wrongStreak >= 2,
+          finished: finished,
+          custom: update.custom,
         );
       },
     );
   }
 
-  Future<void> _playOption(GapOption opt) async {
+  Future<void> _playIndex(int index) async {
     final trial = _runner.currentTrial;
     setState(() {
-      _playCounts[opt.id] = (_playCounts[opt.id] ?? 0) + 1;
+      final i = (index - 1).clamp(0, 2);
+      _playCounts[i] = _playCounts[i] + 1;
+    });
+
+    final hasGap = index == trial.targetIndex;
+    setState(() {
+      _status = hasGap ? 'Playing $index (target)' : 'Playing $index';
     });
     await SoLoudTonePlayer.instance.playNoisyWithOptionalGap(
       amplitude: trial.amplitude,
       totalDuration: trial.totalDuration,
-      gapStart: opt.hasGap ? trial.gapStart : null,
-      gapDuration: opt.hasGap ? trial.gapDuration : null,
+      gapStart: hasGap ? trial.gapStart : null,
+      gapDuration: hasGap ? trial.gapDuration : null,
     );
   }
 
@@ -166,9 +184,18 @@ class _SoundGapDetectionPageState extends State<SoundGapDetectionPage> {
       return;
     }
 
-    final score = _runner.submitGuess(SoundGapGuess('Option $selected'));
+    final score = _runner.submitGuess(SoundGapGuess(selected));
     setState(() {
-      _status = score.correct ? 'Correct.' : 'Not that one—try again.';
+      final stepPct = (_runner.state.custom[Staircase.kStepPct] as num?)?.toDouble();
+      final reversalCount = (_runner.state.custom[Staircase.kReversalCount] as num?)?.toInt();
+      final thresh = (_runner.state.custom[Staircase.kThresholdMs] as num?)?.toDouble();
+      final sd = (_runner.state.custom[Staircase.kThresholdSdMs] as num?)?.toDouble();
+      final pctText = stepPct == null ? '' : ' stepPct=${(stepPct * 100).toStringAsFixed(1)}%';
+      final revText = reversalCount == null ? '' : ' reversals=$reversalCount';
+      final threshText = (thresh != null && sd != null)
+          ? ' threshold=${thresh.toStringAsFixed(1)}±${sd.toStringAsFixed(1)}ms'
+          : '';
+      _status = (score.correct ? 'Correct.' : 'Wrong.') + pctText + revText + threshText;
       _selectedOptionNumber = null;
     });
 
@@ -193,14 +220,13 @@ class _SoundGapDetectionPageState extends State<SoundGapDetectionPage> {
       _outcomes = const <TrialOutcome>[];
       _savedSession = false;
       _selectedOptionNumber = null;
-      _playCounts = <String, int>{};
+      _playCounts = List<int>.filled(3, 0, growable: false);
       _status = 'Press an option to play it and select which one had a gap.';
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    final trial = _runner.currentTrial;
     return Scaffold(
       appBar: AppBar(title: const Text('Sound Gap Detection')),
       body: Center(
@@ -213,6 +239,22 @@ class _SoundGapDetectionPageState extends State<SoundGapDetectionPage> {
               children: [
                 SessionStatsBar(runner: _runner),
                 const SizedBox(height: 16),
+                StaircaseChart(
+                  gapsMs: (( _runner.state.custom[Staircase.kTrialGapHistory] as List?) ?? const [])
+                      .whereType<num>()
+                      .map((x) => x.toDouble())
+                      .toList(growable: false),
+                  correct: (( _runner.state.custom[Staircase.kTrialCorrectHistory] as List?) ?? const [])
+                      .whereType<bool>()
+                      .toList(growable: false),
+                  thresholdMs: _runner.state.finished
+                      ? (_runner.state.custom[Staircase.kThresholdMs] as num?)?.toDouble()
+                      : null,
+                  thresholdSdMs: _runner.state.finished
+                      ? (_runner.state.custom[Staircase.kThresholdSdMs] as num?)?.toDouble()
+                      : null,
+                ),
+                const SizedBox(height: 16),
                 const Text(
                   'Listen to each option. One has a brief silent gap in the middle.',
                   textAlign: TextAlign.center,
@@ -223,12 +265,10 @@ class _SoundGapDetectionPageState extends State<SoundGapDetectionPage> {
                   runSpacing: 12,
                   alignment: WrapAlignment.center,
                   children: [
-                    for (final opt in trial.options)
+                    for (var i = 1; i <= 3; i++)
                       FilledButton.tonal(
-                        onPressed: () => _playOption(opt),
-                        child: Text(
-                          'Play ${opt.id} (${_playCounts[opt.id] ?? 0})',
-                        ),
+                        onPressed: _runner.state.finished ? null : () => _playIndex(i),
+                        child: Text('Play $i (${_playCounts[i - 1]})'),
                       ),
                   ],
                 ),
@@ -251,7 +291,7 @@ class _SoundGapDetectionPageState extends State<SoundGapDetectionPage> {
                   },
                   child: Column(
                     children: [
-                      for (var i = 0; i < trial.options.length; i++)
+                      for (var i = 0; i < _numOptions; i++)
                         RadioListTile<int>(
                           value: i + 1,
                           title: Text('${i + 1}'),

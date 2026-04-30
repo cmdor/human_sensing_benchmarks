@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -360,6 +361,221 @@ class OutcomesTable extends StatelessWidget {
     if (details.isEmpty) return '';
     final keys = details.keys.take(4).toList(growable: false);
     return keys.map((k) => '$k=${details[k]}').join('  ');
+  }
+}
+
+class StaircaseChart extends StatelessWidget {
+  const StaircaseChart({
+    super.key,
+    required this.gapsMs,
+    required this.correct,
+    this.thresholdMs,
+    this.thresholdSdMs,
+    this.height = 160,
+  });
+
+  final List<double> gapsMs;
+  final List<bool> correct;
+  final double? thresholdMs;
+  final double? thresholdSdMs;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    if (gapsMs.isEmpty || gapsMs.length != correct.length) {
+      return const SizedBox.shrink();
+    }
+    return SizedBox(
+      height: height,
+      width: double.infinity,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: CustomPaint(
+            size: Size.infinite,
+            painter: _StaircaseChartPainter(
+              gapsMs: gapsMs,
+              correct: correct,
+              axisColor: Theme.of(context).colorScheme.outline,
+              correctColor: Theme.of(context).colorScheme.primary,
+              wrongColor: Theme.of(context).colorScheme.error,
+              textStyle: Theme.of(context).textTheme.labelSmall ??
+                  const TextStyle(fontSize: 11),
+              thresholdMs: thresholdMs,
+              thresholdSdMs: thresholdSdMs,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _StaircaseChartPainter extends CustomPainter {
+  _StaircaseChartPainter({
+    required this.gapsMs,
+    required this.correct,
+    required this.axisColor,
+    required this.correctColor,
+    required this.wrongColor,
+    required this.textStyle,
+    required this.thresholdMs,
+    required this.thresholdSdMs,
+  });
+
+  final List<double> gapsMs;
+  final List<bool> correct;
+  final Color axisColor;
+  final Color correctColor;
+  final Color wrongColor;
+  final TextStyle textStyle;
+  final double? thresholdMs;
+  final double? thresholdSdMs;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final minGap = gapsMs.reduce((a, b) => a < b ? a : b);
+    final maxGap = gapsMs.reduce((a, b) => a > b ? a : b);
+    final span = (maxGap - minGap).clamp(1e-6, double.infinity);
+
+    final leftPad = 42.0;
+    final bottomPad = 18.0;
+    final topPad = 10.0;
+    final chart = Rect.fromLTWH(
+      leftPad,
+      topPad,
+      (size.width - leftPad).clamp(0, double.infinity),
+      (size.height - topPad - bottomPad).clamp(0, double.infinity),
+    );
+
+    final axisPaint = Paint()
+      ..color = axisColor
+      ..strokeWidth = 1;
+    canvas.drawLine(chart.bottomLeft, chart.bottomRight, axisPaint);
+    canvas.drawLine(chart.bottomLeft, chart.topLeft, axisPaint);
+
+    _drawText(canvas, Offset(0, chart.bottom - 8), '${minGap.toStringAsFixed(1)}ms');
+    _drawText(canvas, Offset(0, chart.top - 4), '${maxGap.toStringAsFixed(1)}ms');
+
+    final mean = thresholdMs;
+    final sd = thresholdSdMs;
+    if (mean != null) {
+      final yMean = chart.bottom - ((mean - minGap) / span) * chart.height;
+      // Match the example: dashed horizontal estimated-threshold line + single label.
+      final thresholdPaint = Paint()
+        ..color = const Color(0xFF7E57C2) // purple-ish
+        ..strokeWidth = 2;
+      _drawDashedLine(
+        canvas,
+        Offset(chart.left, yMean),
+        Offset(chart.right, yMean),
+        thresholdPaint,
+        dash: 7,
+        gap: 5,
+      );
+
+      final label = sd == null
+          ? 'Estimated threshold ${mean.toStringAsFixed(1)}ms'
+          : 'Estimated threshold ${mean.toStringAsFixed(1)}ms (sd ${sd.toStringAsFixed(1)}ms)';
+      _drawText(canvas, Offset(chart.left + 6, chart.top - 2), label);
+    }
+
+    final n = gapsMs.length;
+    if (n == 1) {
+      final y = chart.bottom - ((gapsMs.first - minGap) / span) * chart.height;
+      canvas.drawCircle(
+        Offset(chart.left + chart.width / 2, y),
+        3,
+        Paint()..color = correct.first ? correctColor : wrongColor,
+      );
+      return;
+    }
+
+    final points = <Offset>[];
+    for (var i = 0; i < n; i++) {
+      final x = chart.left + (i / (n - 1)) * chart.width;
+      final y = chart.bottom - ((gapsMs[i] - minGap) / span) * chart.height;
+      points.add(Offset(x, y));
+    }
+
+    final linePaint = Paint()
+      ..color = const Color(0xFF1976D2) // blue line like the example
+      ..strokeWidth = 2
+      ..style = PaintingStyle.stroke;
+    final path = Path()..moveTo(points.first.dx, points.first.dy);
+    for (var i = 1; i < points.length; i++) {
+      path.lineTo(points[i].dx, points[i].dy);
+    }
+    canvas.drawPath(path, linePaint);
+
+    final reversalRingPaint = Paint()
+      ..color = axisColor
+      ..strokeWidth = 2
+      ..style = PaintingStyle.stroke;
+
+    for (var i = 0; i < n; i++) {
+      canvas.drawCircle(
+        points[i],
+        3,
+        Paint()..color = correct[i] ? const Color(0xFF2E7D32) : wrongColor,
+      );
+
+      // Circle reversal points (answer flips: rw or wr).
+      if (i > 0 && correct[i] != correct[i - 1]) {
+        canvas.drawCircle(points[i], 6, reversalRingPaint);
+      }
+    }
+  }
+
+  void _drawText(Canvas canvas, Offset offset, String text) {
+    final tp = TextPainter(
+      text: TextSpan(text: text, style: textStyle),
+      textDirection: TextDirection.ltr,
+    )..layout(maxWidth: 160);
+    tp.paint(canvas, offset);
+  }
+
+  void _drawDashedLine(
+    Canvas canvas,
+    Offset a,
+    Offset b,
+    Paint paint, {
+    required double dash,
+    required double gap,
+  }) {
+    final dx = b.dx - a.dx;
+    final dy = b.dy - a.dy;
+    final dist = sqrt(dx * dx + dy * dy);
+    if (dist <= 0) return;
+    final ux = dx / dist;
+    final uy = dy / dist;
+
+    var t = 0.0;
+    while (t < dist) {
+      final t2 = (t + dash).clamp(0.0, dist);
+      canvas.drawLine(
+        Offset(a.dx + ux * t, a.dy + uy * t),
+        Offset(a.dx + ux * t2, a.dy + uy * t2),
+        paint,
+      );
+      t += dash + gap;
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _StaircaseChartPainter oldDelegate) {
+    return oldDelegate.gapsMs != gapsMs ||
+        oldDelegate.correct != correct ||
+        oldDelegate.axisColor != axisColor ||
+        oldDelegate.correctColor != correctColor ||
+        oldDelegate.wrongColor != wrongColor ||
+        oldDelegate.textStyle != textStyle ||
+        oldDelegate.thresholdMs != thresholdMs ||
+        oldDelegate.thresholdSdMs != thresholdSdMs;
   }
 }
 

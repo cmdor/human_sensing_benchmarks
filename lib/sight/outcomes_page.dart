@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import '../utils/outcomes.dart';
 import '../utils/session_store.dart';
+import '../utils/staircase.dart';
 import '../utils/trial_framework.dart';
 import '../utils/trial_widgets.dart';
 
@@ -153,6 +154,20 @@ class SessionDetailPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final outcomes = deriveOutcomes(_asReport(session));
+    final custom = (session.summary['custom'] is Map)
+        ? Map<String, Object?>.from((session.summary['custom'] as Map).cast<String, Object?>())
+        : const <String, Object?>{};
+    final gaps = (custom[Staircase.kTrialGapHistory] as List?)
+            ?.whereType<num>()
+            .map((x) => x.toDouble())
+            .toList(growable: false) ??
+        const <double>[];
+    final correct = (custom[Staircase.kTrialCorrectHistory] as List?)
+            ?.whereType<bool>()
+            .toList(growable: false) ??
+        const <bool>[];
+    final thresholdMs = (custom[Staircase.kThresholdMs] as num?)?.toDouble();
+    final thresholdSdMs = (custom[Staircase.kThresholdSdMs] as num?)?.toDouble();
     return Scaffold(
       appBar: AppBar(
         title: const Text('Session detail'),
@@ -168,6 +183,25 @@ class SessionDetailPage extends StatelessWidget {
             style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 8),
+          if (gaps.isNotEmpty && gaps.length == correct.length) ...[
+            const Text(
+              'Staircase (gap size)',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 8),
+            StaircaseChart(
+              gapsMs: gaps,
+              correct: correct,
+              thresholdMs: thresholdMs,
+              thresholdSdMs: thresholdSdMs,
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Reaction time',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 8),
+          ],
           OutcomesChart(outcomes: outcomes),
           const SizedBox(height: 12),
           OutcomesTable(outcomes: outcomes),
