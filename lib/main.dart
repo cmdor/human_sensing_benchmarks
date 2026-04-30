@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 // Import local files that I need to run the app
-import 'sight/contrast_finder.dart';
+import 'sight/smallest_noticeable_size.dart';
 
 void main() {
   runApp(const MyApp());
@@ -33,7 +33,7 @@ class MyApp extends StatelessWidget {
         // tested with just a hot reload.
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
       ),
-      home: const ContrastFinder(),
+      home: const SmallestNoticeableSizePage(),
     );
   }
 }
