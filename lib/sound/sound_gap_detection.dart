@@ -1,7 +1,6 @@
 import 'dart:math';
 import 'dart:typed_data';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_soloud/flutter_soloud.dart';
 
@@ -210,19 +209,7 @@ class _SoundGapDetectionPageState extends State<SoundGapDetectionPage> {
 
     final hasGap = index == trial.targetIndex;
     setState(() {
-      var s = 'Playing $index${hasGap ? ' (has gap)' : ''}…';
-      if (kDebugMode && hasGap) {
-        const sampleRate = 44100;
-        final startFrames = ((trial.gapStart.inMilliseconds / 1000.0) * sampleRate).floor();
-        final endFrames = (((trial.gapStart.inMilliseconds + trial.gapDuration.inMilliseconds) / 1000.0) *
-                sampleRate)
-            .ceil();
-        final gapFrames = max(0, endFrames - startFrames);
-        final effectiveMs = gapFrames / sampleRate * 1000.0;
-        s +=
-            ' gapReq=${trial.gapDuration.inMilliseconds}ms gapFrames=$gapFrames eff=${effectiveMs.toStringAsFixed(2)}ms ramp=${_rampMs}ms';
-      }
-      _status = s;
+      _status = 'Playing $index…';
     });
 
     // PCM is cached; a fresh AudioSource is created per play inside
@@ -357,7 +344,7 @@ class _SoundGapDetectionPageState extends State<SoundGapDetectionPage> {
                     for (var i = 1; i <= 3; i++)
                       FilledButton.tonal(
                         onPressed: _runner.state.finished ? null : () => _playIndex(i),
-                        child: Text('Play $i (${_playCounts[i - 1]})'),
+                        child: Text('Play $i'),
                       ),
                   ],
                 ),

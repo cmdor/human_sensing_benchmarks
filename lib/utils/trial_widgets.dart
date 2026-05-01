@@ -82,7 +82,21 @@ class _ExportJsonButtonState extends State<ExportJsonButton> {
   }
 
   Future<void> _copy() async {
-    final json = widget.runner.report.toJsonString(summary: widget.runner.summaryJson());
+    final outcomes = deriveOutcomes(widget.runner.report);
+    final summary = Map<String, Object?>.from(widget.runner.summaryJson())
+      ..['outcomes'] = outcomes
+          .map(
+            (o) => <String, Object?>{
+              'trialIndex': o.trialIndex,
+              'correct': o.correct,
+              'valid': o.valid,
+              'reactionMs': o.reactionMs,
+              'details': o.details,
+            },
+          )
+          .toList(growable: false);
+
+    final json = widget.runner.report.toJsonString(summary: summary);
     await Clipboard.setData(ClipboardData(text: json));
 
     setState(() {
@@ -218,7 +232,8 @@ class _OutcomesChartPainter extends CustomPainter {
       return;
     }
 
-    final minRt = rts.reduce((a, b) => a < b ? a : b);
+    // Force y-axis lower bound to 0 for readability.
+    final minRt = 0;
     final maxRt = rts.reduce((a, b) => a > b ? a : b);
     final span = (maxRt - minRt).clamp(1, 1 << 30);
 
@@ -244,11 +259,21 @@ class _OutcomesChartPainter extends CustomPainter {
       Offset(0, chart.bottom - 8),
       '${minRt}ms',
     );
+    // Also label the baseline at the axis so it's visually unambiguous.
+    _drawText(
+      canvas,
+      Offset(chart.left + 4, chart.bottom - 8),
+      '${minRt}ms',
+    );
     _drawText(
       canvas,
       Offset(0, chart.top - 4),
       '${maxRt}ms',
     );
+
+    // Axis labels
+    _drawText(canvas, Offset(chart.left + chart.width / 2 - 16, chart.bottom + 2), 'Trial');
+    _drawText(canvas, Offset(0, chart.top + chart.height / 2 - 6), 'ms');
 
     final n = outcomes.length;
     if (n == 1) {
@@ -446,7 +471,9 @@ class _StaircaseChartPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final minLevel = levelsHistory.reduce((a, b) => a < b ? a : b);
+    // Force y-axis lower bound to 0 for readability and comparability across
+    // sessions (esp. for gap-ms staircases).
+    final minLevel = 0.0;
     final maxLevel = levelsHistory.reduce((a, b) => a > b ? a : b);
     final span = (maxLevel - minLevel).clamp(1e-6, double.infinity);
 
@@ -466,6 +493,10 @@ class _StaircaseChartPainter extends CustomPainter {
     canvas.drawLine(chart.bottomLeft, chart.bottomRight, axisPaint);
     canvas.drawLine(chart.bottomLeft, chart.topLeft, axisPaint);
 
+    // Axis labels
+    _drawText(canvas, Offset(chart.left + chart.width / 2 - 16, chart.bottom + 2), 'Trial');
+    _drawText(canvas, Offset(0, chart.top + chart.height / 2 - 6), yAxisLabel);
+
     _drawText(canvas, Offset(0, chart.bottom - 8), '${minLevel.toStringAsFixed(1)}$yAxisLabel');
     _drawText(canvas, Offset(0, chart.top - 4), '${maxLevel.toStringAsFixed(1)}$yAxisLabel');
 
@@ -483,6 +514,18 @@ class _StaircaseChartPainter extends CustomPainter {
         thresholdPaint,
         dash: 7,
         gap: 5,
+      );
+
+      // Plot the detected value (score) directly on the graph.
+      canvas.drawCircle(
+        Offset(chart.left, yMean),
+        4,
+        Paint()..color = const Color(0xFF7E57C2),
+      );
+      _drawText(
+        canvas,
+        Offset(chart.left + 6, yMean - 12),
+        '${mean.toStringAsFixed(1)}$yAxisLabel',
       );
 
       final label = sd == null
