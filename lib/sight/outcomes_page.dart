@@ -8,6 +8,113 @@ import '../utils/session_store.dart';
 import '../utils/staircase.dart';
 import '../utils/trial_framework.dart';
 import '../utils/trial_widgets.dart';
+import '../sound/amplitude_jnd_levels.dart';
+
+/// Stored in session [StoredSession.summary] under this key (see sound / pitch JND).
+const String kSessionExperimentKind = 'experimentKind';
+
+/// Matches completion-screen staircase for gap detection ([SoundGapDetectionPage]).
+const String kExperimentSoundGapDetection = 'sound_gap_detection';
+
+/// Matches completion-screen staircase for pitch JND ([PitchJndPage]).
+const String kExperimentPitchJnd = 'pitch_jnd';
+
+/// Matches completion-screen staircase for amplitude JND ([AmplitudeJndPage]).
+const String kExperimentAmplitudeJnd = 'amplitude_jnd';
+
+_StaircaseSessionLabels _staircaseLabelsForSession(StoredSession session) {
+  final kind = _inferExperimentKind(session);
+  switch (kind) {
+    case _InferredExperimentKind.soundGap:
+      return const _StaircaseSessionLabels(
+        sectionTitle: 'Staircase (gap duration)',
+        yAxisLabel: 'ms',
+      );
+    case _InferredExperimentKind.pitchJnd:
+      return const _StaircaseSessionLabels(
+        sectionTitle: 'Staircase (pitch difference Δf)',
+        yAxisLabel: 'Hz',
+      );
+    case _InferredExperimentKind.amplitudeJnd:
+      return const _StaircaseSessionLabels(
+        sectionTitle: 'Staircase (amplitude Δ, louder envelope)',
+        yAxisLabel: 'dB',
+      );
+    case _InferredExperimentKind.unknown:
+      return const _StaircaseSessionLabels(
+        sectionTitle: 'Staircase',
+        yAxisLabel: 'level',
+      );
+  }
+}
+
+class _StaircaseSessionLabels {
+  const _StaircaseSessionLabels({
+    required this.sectionTitle,
+    required this.yAxisLabel,
+  });
+
+  final String sectionTitle;
+  final String yAxisLabel;
+}
+
+enum _InferredExperimentKind { soundGap, pitchJnd, amplitudeJnd, unknown }
+
+_InferredExperimentKind _inferExperimentKind(StoredSession session) {
+  final raw = session.summary[kSessionExperimentKind];
+  if (raw == kExperimentSoundGapDetection) {
+    return _InferredExperimentKind.soundGap;
+  }
+  if (raw == kExperimentPitchJnd) {
+    return _InferredExperimentKind.pitchJnd;
+  }
+  if (raw == kExperimentAmplitudeJnd) {
+    return _InferredExperimentKind.amplitudeJnd;
+  }
+
+  for (final e in session.events) {
+    if ((e['type'] as String?) != 'trial_scored') continue;
+    final data = e['data'];
+    if (data is! Map) continue;
+    final m = Map<String, Object?>.from(data.cast<String, Object?>());
+    if (m.containsKey('gapMs')) {
+      return _InferredExperimentKind.soundGap;
+    }
+    if (m.containsKey('deltaHz') && m.containsKey('baseHz')) {
+      return _InferredExperimentKind.pitchJnd;
+    }
+    if (m.containsKey('amplitudeDeltaGain') && m.containsKey('referenceGain')) {
+      return _InferredExperimentKind.amplitudeJnd;
+    }
+  }
+
+  return _InferredExperimentKind.unknown;
+}
+
+String _sessionListSubtitle(StoredSession s) {
+  final acc = s.summary['accuracy'];
+  final total = s.summary['totalScored'];
+  final kind = _inferExperimentKind(s);
+  final label = switch (kind) {
+    _InferredExperimentKind.soundGap => 'Sound gap',
+    _InferredExperimentKind.pitchJnd => 'Pitch JND',
+    _InferredExperimentKind.amplitudeJnd => 'Amplitude JND',
+    _InferredExperimentKind.unknown => 'Session',
+  };
+  return '$label  ·  accuracy: $acc  total: $total';
+}
+
+double? _amplitudeReferenceGainFromSession(StoredSession session) {
+  for (final e in session.events) {
+    if ((e['type'] as String?) != 'trial_scored') continue;
+    final data = e['data'];
+    if (data is! Map) continue;
+    final m = Map<String, Object?>.from(data.cast<String, Object?>());
+    final r = m['referenceGain'];
+    if (r is num) return r.toDouble();
+  }
+  return null;
+}
 
 class OutcomesPage extends StatefulWidget {
   const OutcomesPage({super.key});
@@ -111,12 +218,10 @@ class _OutcomesPageState extends State<OutcomesPage> {
             itemBuilder: (context, i) {
               final s = reversed[i];
               final started = s.startedAtIso;
-              final acc = s.summary['accuracy'];
-              final total = s.summary['totalScored'];
               return Card(
                 child: ListTile(
                   title: Text(started),
-                  subtitle: Text('accuracy: $acc  total: $total'),
+                  subtitle: Text(_sessionListSubtitle(s)),
                   trailing: IconButton(
                     tooltip: 'Copy JSON',
                     icon: const Icon(Icons.copy),
@@ -154,10 +259,11 @@ class SessionDetailPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final outcomes = deriveOutcomes(_asReport(session));
+    final staircaseLabels = _staircaseLabelsForSession(session);
     final custom = (session.summary['custom'] is Map)
         ? Map<String, Object?>.from((session.summary['custom'] as Map).cast<String, Object?>())
         : const <String, Object?>{};
-    final gaps = (custom[Staircase.kLevelHistory] as List?)
+    final levelHistory = (custom[Staircase.kLevelHistory] as List?)
             ?.whereType<num>()
             .map((x) => x.toDouble())
             .toList(growable: false) ??
@@ -166,8 +272,45 @@ class SessionDetailPage extends StatelessWidget {
             ?.whereType<bool>()
             .toList(growable: false) ??
         const <bool>[];
-    final thresholdMs = (custom[Staircase.kThreshold] as num?)?.toDouble();
-    final thresholdSdMs = (custom[Staircase.kThresholdSd] as num?)?.toDouble();
+    final thresholdLin = (custom[Staircase.kThreshold] as num?)?.toDouble();
+    final thresholdSdLin = (custom[Staircase.kThresholdSd] as num?)?.toDouble();
+    final experimentKind = _inferExperimentKind(session);
+
+    List<double> chartLevels = levelHistory;
+    double? chartThreshold = thresholdLin;
+    double? chartSd = thresholdSdLin;
+    var chartYAxis = staircaseLabels.yAxisLabel;
+
+    if (experimentKind == _InferredExperimentKind.amplitudeJnd) {
+      final refGain =
+          _amplitudeReferenceGainFromSession(session) ?? amplitudeJndReferenceGain;
+      chartLevels = levelHistory
+          .map(
+            (d) => amplitudeLinearDeltaToEnvelopeDbFor(
+              linearDelta: d,
+              referenceGain: refGain,
+              maxPeakGain: amplitudeJndMaxPeakGain,
+            ),
+          )
+          .toList(growable: false);
+      chartThreshold = thresholdLin != null
+          ? amplitudeLinearDeltaToEnvelopeDbFor(
+              linearDelta: thresholdLin,
+              referenceGain: refGain,
+              maxPeakGain: amplitudeJndMaxPeakGain,
+            )
+          : null;
+      chartSd = thresholdLin != null && thresholdSdLin != null
+          ? amplitudeThresholdSdEnvelopeDbFor(
+              thresholdLinear: thresholdLin,
+              sdLinear: thresholdSdLin,
+              referenceGain: refGain,
+              maxPeakGain: amplitudeJndMaxPeakGain,
+            )
+          : null;
+      chartYAxis = 'dB';
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Session detail'),
@@ -183,18 +326,18 @@ class SessionDetailPage extends StatelessWidget {
             style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 8),
-          if (gaps.isNotEmpty && gaps.length == correct.length) ...[
-            const Text(
-              'Staircase (gap size)',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+          if (levelHistory.isNotEmpty && levelHistory.length == correct.length) ...[
+            Text(
+              staircaseLabels.sectionTitle,
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 8),
             StaircaseChart(
-              levelsHistory: gaps,
+              levelsHistory: chartLevels,
               correct: correct,
-              threshold: thresholdMs,
-              thresholdSd: thresholdSdMs,
-              yAxisLabel: 'ms',
+              threshold: chartThreshold,
+              thresholdSd: chartSd,
+              yAxisLabel: chartYAxis,
             ),
             const SizedBox(height: 16),
             const Text(

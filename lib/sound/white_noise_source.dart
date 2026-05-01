@@ -108,6 +108,47 @@ Float32List withGapZeros({
   return out;
 }
 
+/// Generates a pure sine tone as interleaved f32 PCM.
+///
+/// A half-cosine amplitude ramp of [rampMs] ms is applied at both ends so
+/// that the onset and offset are click-free regardless of where in the cycle
+/// the waveform starts or stops.
+Float32List buildSineTonePcm({
+  required double frequencyHz,
+  required Duration duration,
+  int sampleRate = 44100,
+  Channels channels = Channels.mono,
+  int rampMs = 10,
+}) {
+  final frames =
+      (duration.inMilliseconds * sampleRate / 1000).round().clamp(1, 1 << 30);
+  final channelCount = channels.count;
+  final out = Float32List(frames * channelCount);
+  final rampFrames =
+      ((rampMs / 1000.0) * sampleRate).ceil().clamp(0, frames ~/ 2);
+
+  for (var f = 0; f < frames; f++) {
+    final t = f / sampleRate;
+    final sample = math.sin(2.0 * math.pi * frequencyHz * t);
+
+    double gain;
+    if (f < rampFrames && rampFrames > 0) {
+      final phase = f / rampFrames;
+      gain = 0.5 * (1.0 - math.cos(math.pi * phase));
+    } else if (f >= frames - rampFrames && rampFrames > 0) {
+      final phase = (f - (frames - rampFrames)) / rampFrames;
+      gain = 0.5 * (1.0 + math.cos(math.pi * phase));
+    } else {
+      gain = 1.0;
+    }
+
+    for (var c = 0; c < channelCount; c++) {
+      out[f * channelCount + c] = (sample * gain).toDouble();
+    }
+  }
+  return out;
+}
+
 /// Builds a SoLoud buffer stream AudioSource from f32le PCM.
 ///
 /// Notes:

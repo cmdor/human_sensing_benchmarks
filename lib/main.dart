@@ -5,6 +5,8 @@ import 'sight/smallest_noticeable_size.dart';
 import 'sight/contrast_finder.dart';
 import 'sight/outcomes_page.dart';
 import 'sound/pitch_frequency_range.dart';
+import 'sound/amplitude_jnd.dart';
+import 'sound/pitch_jnd.dart';
 import 'sound/sound_gap_detection.dart';
 
 void main() {
@@ -117,6 +119,28 @@ class TrialHomePage extends StatelessWidget {
                     );
                   },
                   child: const Text('Sound Gap Detection'),
+                ),
+                const SizedBox(height: 12),
+                FilledButton.tonal(
+                  onPressed: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const PitchJndPage(),
+                      ),
+                    );
+                  },
+                  child: const Text('Pitch JND'),
+                ),
+                const SizedBox(height: 12),
+                FilledButton.tonal(
+                  onPressed: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const AmplitudeJndPage(),
+                      ),
+                    );
+                  },
+                  child: const Text('Amplitude JND'),
                 ),
               ],
             ),

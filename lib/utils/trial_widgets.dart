@@ -31,7 +31,10 @@ class SessionStatsBar extends StatelessWidget {
         _Chip(label: 'Accuracy', value: '$accuracyPct%'),
         _Chip(label: 'WrongStreak', value: '${s.wrongStreak}'),
         _Chip(label: 'LastCorrect', value: last),
-        SessionElapsedChip(startedAt: s.startedAt),
+        SessionElapsedChip(
+          startedAt: s.startedAt,
+          freezeAt: s.finished ? runner.report.finishedAt : null,
+        ),
       ],
     );
   }
@@ -41,12 +44,20 @@ class SessionElapsedChip extends StatelessWidget {
   const SessionElapsedChip({
     super.key,
     required this.startedAt,
+    this.freezeAt,
   });
 
   final DateTime startedAt;
 
+  /// When non-null (session finished), elapsed time stops updating at this instant.
+  final DateTime? freezeAt;
+
   @override
   Widget build(BuildContext context) {
+    if (freezeAt != null) {
+      final elapsed = freezeAt!.difference(startedAt);
+      return _Chip(label: 'Elapsed', value: formatHms(elapsed));
+    }
     return StreamBuilder<int>(
       stream: Stream<int>.periodic(const Duration(seconds: 1), (i) => i),
       builder: (context, _) {

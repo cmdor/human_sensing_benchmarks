@@ -284,7 +284,13 @@ class _SoundGapDetectionPageState extends State<SoundGapDetectionPage> {
       _outcomes = outcomes;
       _status = 'Finished (2 wrong in a row).';
     });
-    _store.appendSession(_runner.report, _runner.summaryJson());
+    _store.appendSession(
+      _runner.report,
+      <String, Object?>{
+        ..._runner.summaryJson(),
+        'experimentKind': 'sound_gap_detection',
+      },
+    );
   }
 
   void _restart() {
