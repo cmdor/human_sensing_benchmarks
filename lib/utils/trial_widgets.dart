@@ -367,22 +367,27 @@ class OutcomesTable extends StatelessWidget {
 class StaircaseChart extends StatelessWidget {
   const StaircaseChart({
     super.key,
-    required this.gapsMs,
+    required this.levelsHistory,
     required this.correct,
-    this.thresholdMs,
-    this.thresholdSdMs,
+    this.threshold,
+    this.thresholdSd,
+    this.yAxisLabel = 'ms',
     this.height = 160,
   });
 
-  final List<double> gapsMs;
+  final List<double> levelsHistory;
   final List<bool> correct;
-  final double? thresholdMs;
-  final double? thresholdSdMs;
+  final double? threshold;
+  final double? thresholdSd;
+
+  /// Unit label shown on axis tick marks and the threshold annotation.
+  /// e.g. 'ms' for gap detection, 'Hz' for pitch JND, 'dB' for amplitude JND.
+  final String yAxisLabel;
   final double height;
 
   @override
   Widget build(BuildContext context) {
-    if (gapsMs.isEmpty || gapsMs.length != correct.length) {
+    if (levelsHistory.isEmpty || levelsHistory.length != correct.length) {
       return const SizedBox.shrink();
     }
     return SizedBox(
@@ -398,15 +403,16 @@ class StaircaseChart extends StatelessWidget {
           child: CustomPaint(
             size: Size.infinite,
             painter: _StaircaseChartPainter(
-              gapsMs: gapsMs,
+              levelsHistory: levelsHistory,
               correct: correct,
               axisColor: Theme.of(context).colorScheme.outline,
               correctColor: Theme.of(context).colorScheme.primary,
               wrongColor: Theme.of(context).colorScheme.error,
               textStyle: Theme.of(context).textTheme.labelSmall ??
                   const TextStyle(fontSize: 11),
-              thresholdMs: thresholdMs,
-              thresholdSdMs: thresholdSdMs,
+              threshold: threshold,
+              thresholdSd: thresholdSd,
+              yAxisLabel: yAxisLabel,
             ),
           ),
         ),
@@ -417,34 +423,36 @@ class StaircaseChart extends StatelessWidget {
 
 class _StaircaseChartPainter extends CustomPainter {
   _StaircaseChartPainter({
-    required this.gapsMs,
+    required this.levelsHistory,
     required this.correct,
     required this.axisColor,
     required this.correctColor,
     required this.wrongColor,
     required this.textStyle,
-    required this.thresholdMs,
-    required this.thresholdSdMs,
+    required this.threshold,
+    required this.thresholdSd,
+    required this.yAxisLabel,
   });
 
-  final List<double> gapsMs;
+  final List<double> levelsHistory;
   final List<bool> correct;
   final Color axisColor;
   final Color correctColor;
   final Color wrongColor;
   final TextStyle textStyle;
-  final double? thresholdMs;
-  final double? thresholdSdMs;
+  final double? threshold;
+  final double? thresholdSd;
+  final String yAxisLabel;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final minGap = gapsMs.reduce((a, b) => a < b ? a : b);
-    final maxGap = gapsMs.reduce((a, b) => a > b ? a : b);
-    final span = (maxGap - minGap).clamp(1e-6, double.infinity);
+    final minLevel = levelsHistory.reduce((a, b) => a < b ? a : b);
+    final maxLevel = levelsHistory.reduce((a, b) => a > b ? a : b);
+    final span = (maxLevel - minLevel).clamp(1e-6, double.infinity);
 
-    final leftPad = 42.0;
-    final bottomPad = 18.0;
-    final topPad = 10.0;
+    const leftPad = 42.0;
+    const bottomPad = 18.0;
+    const topPad = 10.0;
     final chart = Rect.fromLTWH(
       leftPad,
       topPad,
@@ -458,14 +466,13 @@ class _StaircaseChartPainter extends CustomPainter {
     canvas.drawLine(chart.bottomLeft, chart.bottomRight, axisPaint);
     canvas.drawLine(chart.bottomLeft, chart.topLeft, axisPaint);
 
-    _drawText(canvas, Offset(0, chart.bottom - 8), '${minGap.toStringAsFixed(1)}ms');
-    _drawText(canvas, Offset(0, chart.top - 4), '${maxGap.toStringAsFixed(1)}ms');
+    _drawText(canvas, Offset(0, chart.bottom - 8), '${minLevel.toStringAsFixed(1)}$yAxisLabel');
+    _drawText(canvas, Offset(0, chart.top - 4), '${maxLevel.toStringAsFixed(1)}$yAxisLabel');
 
-    final mean = thresholdMs;
-    final sd = thresholdSdMs;
+    final mean = threshold;
+    final sd = thresholdSd;
     if (mean != null) {
-      final yMean = chart.bottom - ((mean - minGap) / span) * chart.height;
-      // Match the example: dashed horizontal estimated-threshold line + single label.
+      final yMean = chart.bottom - ((mean - minLevel) / span) * chart.height;
       final thresholdPaint = Paint()
         ..color = const Color(0xFF7E57C2) // purple-ish
         ..strokeWidth = 2;
@@ -479,14 +486,14 @@ class _StaircaseChartPainter extends CustomPainter {
       );
 
       final label = sd == null
-          ? 'Estimated threshold ${mean.toStringAsFixed(1)}ms'
-          : 'Estimated threshold ${mean.toStringAsFixed(1)}ms (sd ${sd.toStringAsFixed(1)}ms)';
+          ? 'Estimated threshold ${mean.toStringAsFixed(1)}$yAxisLabel'
+          : 'Estimated threshold ${mean.toStringAsFixed(1)}$yAxisLabel (sd ${sd.toStringAsFixed(1)}$yAxisLabel)';
       _drawText(canvas, Offset(chart.left + 6, chart.top - 2), label);
     }
 
-    final n = gapsMs.length;
+    final n = levelsHistory.length;
     if (n == 1) {
-      final y = chart.bottom - ((gapsMs.first - minGap) / span) * chart.height;
+      final y = chart.bottom - ((levelsHistory.first - minLevel) / span) * chart.height;
       canvas.drawCircle(
         Offset(chart.left + chart.width / 2, y),
         3,
@@ -498,7 +505,7 @@ class _StaircaseChartPainter extends CustomPainter {
     final points = <Offset>[];
     for (var i = 0; i < n; i++) {
       final x = chart.left + (i / (n - 1)) * chart.width;
-      final y = chart.bottom - ((gapsMs[i] - minGap) / span) * chart.height;
+      final y = chart.bottom - ((levelsHistory[i] - minLevel) / span) * chart.height;
       points.add(Offset(x, y));
     }
 
@@ -568,14 +575,15 @@ class _StaircaseChartPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _StaircaseChartPainter oldDelegate) {
-    return oldDelegate.gapsMs != gapsMs ||
+    return oldDelegate.levelsHistory != levelsHistory ||
         oldDelegate.correct != correct ||
         oldDelegate.axisColor != axisColor ||
         oldDelegate.correctColor != correctColor ||
         oldDelegate.wrongColor != wrongColor ||
         oldDelegate.textStyle != textStyle ||
-        oldDelegate.thresholdMs != thresholdMs ||
-        oldDelegate.thresholdSdMs != thresholdSdMs;
+        oldDelegate.threshold != threshold ||
+        oldDelegate.thresholdSd != thresholdSd ||
+        oldDelegate.yAxisLabel != yAxisLabel;
   }
 }
 

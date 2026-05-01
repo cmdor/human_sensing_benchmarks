@@ -1,124 +1,173 @@
 import 'dart:math';
 
-/// Minimal 2-down 1-up staircase with multiplicative (percent) step sizes.
+/// Configuration for the adaptive staircase algorithm.
 ///
-/// Designed to be stored in `TrialRunnerState.custom` as a JSON-friendly map.
+/// All fields are experiment-agnostic — they describe the step schedule and
+/// stopping policy only.  Domain-specific details (what "level" means, its
+/// units, its bounds) are supplied by the calling experiment.
+class StaircaseConfig {
+  const StaircaseConfig({
+    this.downInitialPct = 0.20,
+    this.upInitialPct = 0.20,
+    this.decayFactor = 0.85,
+    this.downMinPct = 0.05,
+    this.upMinPct = 0.05,
+    this.nDown = 2,
+    this.thresholdLastN = 4,
+  });
+
+  /// Starting multiplicative step size for stepping DOWN (harder).
+  /// Example: 0.20 = 20%.
+  final double downInitialPct;
+
+  /// Starting multiplicative step size for stepping UP (easier).
+  final double upInitialPct;
+
+  /// Factor by which the step shrinks after each reversal.
+  final double decayFactor;
+
+  /// Floor for the DOWN step size — never goes below this.
+  final double downMinPct;
+
+  /// Floor for the UP step size — never goes below this.
+  final double upMinPct;
+
+  /// Number of consecutive correct answers required to step down (harder).
+  /// Classic 2-down 1-up = 2.
+  final int nDown;
+
+  /// How many reversal values to average when computing the threshold.
+  final int thresholdLastN;
+
+  double downStepPctForReversals(int reversalCount) {
+    final pct = downInitialPct * pow(decayFactor, reversalCount).toDouble();
+    return max(downMinPct, pct);
+  }
+
+  double upStepPctForReversals(int reversalCount) {
+    final pct = upInitialPct * pow(decayFactor, reversalCount).toDouble();
+    return max(upMinPct, pct);
+  }
+}
+
+/// Minimal N-down 1-up staircase with multiplicative step sizes.
+///
+/// All state is stored in a JSON-friendly [Map] so it can be kept inside
+/// [TrialRunnerState.custom] and persisted to the session report without
+/// extra serialization work.
+///
+/// The algorithm is deliberately parameter-agnostic: "level" can mean gap
+/// duration (ms), pitch delta (Hz or cents), amplitude delta (dB), etc.
+/// The calling experiment supplies the bounds, initial value, and config.
 class Staircase {
-  static const String kGapMs = 'gapMs';
+  // ── State-map keys ────────────────────────────────────────────────────────
+  static const String kLevel = 'level';
   static const String kConsecutiveCorrect = 'consecutiveCorrect';
   static const String kDirection = 'direction'; // 'up' | 'down' | 'none'
   static const String kLastAnswerCorrect = 'lastAnswerCorrect'; // bool?
   static const String kReversals = 'reversals';
   static const String kReversalCount = 'reversalCount';
   static const String kStepPct = 'stepPct';
-  static const String kThresholdMs = 'thresholdMs';
-  static const String kThresholdSdMs = 'thresholdSdMs';
-  static const String kTrialGapHistory = 'trialGapHistory';
-  static const String kTrialCorrectHistory = 'trialCorrectHistory';
+  static const String kThreshold = 'threshold';
+  static const String kThresholdSd = 'thresholdSd';
+  static const String kLevelHistory = 'levelHistory';
+  static const String kCorrectHistory = 'correctHistory';
 
   static Map<String, Object?> initialCustom({
-    required double initialGapMs,
+    required double initialLevel,
+    StaircaseConfig config = const StaircaseConfig(),
   }) {
     return <String, Object?>{
-      kGapMs: initialGapMs,
+      kLevel: initialLevel,
       kConsecutiveCorrect: 0,
       kDirection: 'none',
       kLastAnswerCorrect: null,
       kReversals: <double>[],
       kReversalCount: 0,
-      kStepPct: 0.20,
-      kThresholdMs: null,
-      kThresholdSdMs: null,
-      kTrialGapHistory: <double>[],
-      kTrialCorrectHistory: <bool>[],
+      kStepPct: config.downInitialPct,
+      kThreshold: null,
+      kThresholdSd: null,
+      kLevelHistory: <double>[],
+      kCorrectHistory: <bool>[],
     };
-  }
-
-  static double stepPctForReversals(int reversalCount) {
-    // User-chosen schedule: start 20% decaying toward 5%.
-    final pct = 0.20 * pow(0.85, reversalCount).toDouble();
-    return max(0.05, pct);
   }
 
   static StaircaseUpdate update({
     required Map<String, Object?> custom,
     required bool correct,
-    required double presentedGapMs,
-    required double minGapMs,
-    required double maxGapMs,
+    required double presentedLevel,
+    required double minLevel,
+    required double maxLevel,
+    StaircaseConfig config = const StaircaseConfig(),
   }) {
-    final gapMs = _asDouble(custom[kGapMs]) ?? presentedGapMs;
+    final level = _asDouble(custom[kLevel]) ?? presentedLevel;
     final consecutiveCorrect = _asInt(custom[kConsecutiveCorrect]) ?? 0;
     final prevDirection = (custom[kDirection] as String?) ?? 'none';
     final lastAnswerCorrect = custom[kLastAnswerCorrect] as bool?;
     final reversals = _asDoubleList(custom[kReversals]) ?? <double>[];
     final reversalCount = _asInt(custom[kReversalCount]) ?? reversals.length;
 
-    final gapHistory = _asDoubleList(custom[kTrialGapHistory]) ?? <double>[];
-    final correctHistory = _asBoolList(custom[kTrialCorrectHistory]) ?? <bool>[];
+    final levelHistory = _asDoubleList(custom[kLevelHistory]) ?? <double>[];
+    final correctHistory = _asBoolList(custom[kCorrectHistory]) ?? <bool>[];
 
-    gapHistory.add(presentedGapMs);
+    levelHistory.add(presentedLevel);
     correctHistory.add(correct);
 
-    var nextGap = gapMs;
+    var nextLevel = level;
     var nextConsecutiveCorrect = consecutiveCorrect;
     var steppedDirection = 'none';
     var didStep = false;
-
-    final pct = stepPctForReversals(reversalCount);
+    final downPct = config.downStepPctForReversals(reversalCount);
+    final upPct = config.upStepPctForReversals(reversalCount);
 
     if (correct) {
       nextConsecutiveCorrect += 1;
-      if (nextConsecutiveCorrect >= 2) {
+      if (nextConsecutiveCorrect >= config.nDown) {
         didStep = true;
         steppedDirection = 'down';
-        nextGap = nextGap * (1.0 - pct);
+        nextLevel = nextLevel * (1.0 - downPct);
         nextConsecutiveCorrect = 0;
       }
     } else {
       didStep = true;
       steppedDirection = 'up';
-      nextGap = nextGap * (1.0 + pct);
+      nextLevel = nextLevel * (1.0 + upPct);
       nextConsecutiveCorrect = 0;
     }
 
-    nextGap = nextGap.clamp(minGapMs, maxGapMs).toDouble();
+    nextLevel = nextLevel.clamp(minLevel, maxLevel).toDouble();
 
     var nextDirection = prevDirection;
     var nextReversals = reversals;
     var nextReversalCount = reversalCount;
     var reversalHappened = false;
 
-    // Reversal definition (per your clarification):
     // A reversal occurs when answers flip correctness sequentially: rw or wr.
     if (lastAnswerCorrect != null && lastAnswerCorrect != correct) {
       reversalHappened = true;
-      // Record the gap that was presented on the trial where the flip happened.
-      // (This matches the "turnaround point" intuition: performance changed at this level.)
-      nextReversals = List<double>.from(reversals)..add(presentedGapMs);
+      nextReversals = List<double>.from(reversals)..add(presentedLevel);
       nextReversalCount = nextReversals.length;
     }
 
-    // Keep direction as an informational field about the last *step* applied.
     if (didStep) {
       nextDirection = steppedDirection;
     }
 
-    final threshold = _meanLastN(nextReversals, 4);
-    final thresholdSd = _sdLastN(nextReversals, 4);
+    final threshold = _meanLastN(nextReversals, config.thresholdLastN);
+    final thresholdSd = _sdLastN(nextReversals, config.thresholdLastN);
 
     final out = <String, Object?>{
-      kGapMs: nextGap,
+      kLevel: nextLevel,
       kConsecutiveCorrect: nextConsecutiveCorrect,
       kDirection: nextDirection,
       kLastAnswerCorrect: correct,
       kReversals: nextReversals,
       kReversalCount: nextReversalCount,
-      kStepPct: pct,
-      kThresholdMs: threshold,
-      kThresholdSdMs: thresholdSd,
-      kTrialGapHistory: gapHistory,
-      kTrialCorrectHistory: correctHistory,
+      kStepPct: steppedDirection == 'up' ? upPct : downPct,
+      kThreshold: threshold,
+      kThresholdSd: thresholdSd,
+      kLevelHistory: levelHistory,
+      kCorrectHistory: correctHistory,
     };
 
     return StaircaseUpdate(
@@ -127,10 +176,10 @@ class Staircase {
       stepDirection: steppedDirection,
       reversalHappened: reversalHappened,
       reversalCount: nextReversalCount,
-      thresholdMs: threshold,
-      thresholdSdMs: thresholdSd,
-      stepPct: pct,
-      nextGapMs: nextGap,
+      threshold: threshold,
+      thresholdSd: thresholdSd,
+      stepPct: steppedDirection == 'up' ? upPct : downPct,
+      nextLevel: nextLevel,
     );
   }
 
@@ -157,10 +206,10 @@ class StaircaseUpdate {
     required this.stepDirection,
     required this.reversalHappened,
     required this.reversalCount,
-    required this.thresholdMs,
-    required this.thresholdSdMs,
+    required this.threshold,
+    required this.thresholdSd,
     required this.stepPct,
-    required this.nextGapMs,
+    required this.nextLevel,
   });
 
   final Map<String, Object?> custom;
@@ -168,10 +217,10 @@ class StaircaseUpdate {
   final String stepDirection; // 'up' | 'down' | 'none'
   final bool reversalHappened;
   final int reversalCount;
-  final double? thresholdMs;
-  final double? thresholdSdMs;
+  final double? threshold;
+  final double? thresholdSd;
   final double stepPct;
-  final double nextGapMs;
+  final double nextLevel;
 }
 
 double? _asDouble(Object? v) {
@@ -209,4 +258,3 @@ List<bool>? _asBoolList(Object? v) {
   }
   return null;
 }
-

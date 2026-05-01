@@ -3,6 +3,7 @@ import 'dart:math';
 
 import 'package:flutter_soloud/flutter_soloud.dart';
 import 'gap_player.dart';
+import 'white_noise_source.dart';
 
 /// Minimal helper to play short procedural sine tones via SoLoud.
 ///
@@ -18,6 +19,8 @@ class SoLoudTonePlayer {
 
   AudioSource? _sineSource;
   AudioSource? _noisySource;
+  AudioSource? _whiteNoiseSource;
+  Duration? _whiteNoiseDuration;
 
   Future<void> _ensureInit() async {
     if (_initialized) return;
@@ -54,6 +57,26 @@ class SoLoudTonePlayer {
       0.65, // detune
     );
     return _noisySource!;
+  }
+
+  Future<AudioSource> _ensureWhiteNoiseSource(Duration duration) async {
+    await _ensureInit();
+    if (_whiteNoiseSource != null && _whiteNoiseDuration == duration) {
+      return _whiteNoiseSource!;
+    }
+    if (_whiteNoiseSource != null) {
+      await _soloud.disposeSource(_whiteNoiseSource!);
+      _whiteNoiseSource = null;
+      _whiteNoiseDuration = null;
+    }
+    _whiteNoiseSource = buildWhiteNoiseSource(
+      _soloud,
+      duration: duration,
+      sampleRate: 44100,
+      channels: Channels.mono,
+    );
+    _whiteNoiseDuration = duration;
+    return _whiteNoiseSource!;
   }
 
   /// Play a sine tone. Returns once playback has been started.
@@ -99,6 +122,25 @@ class SoLoudTonePlayer {
     );
   }
 
+  /// Play true PCM white noise with an optional mid-sound silent gap.
+  Future<void> playWhiteNoiseWithOptionalGap({
+    required double amplitude,
+    required Duration totalDuration,
+    Duration? gapStart,
+    Duration? gapDuration,
+  }) async {
+    final source = await _ensureWhiteNoiseSource(totalDuration);
+    await playNoiseWithGap(
+      _soloud,
+      source,
+      amplitude: amplitude,
+      totalDurationMs: totalDuration.inMilliseconds,
+      baseHz: null,
+      gapStartMs: gapStart?.inMilliseconds,
+      gapDurationMs: gapDuration?.inMilliseconds,
+    );
+  }
+
   Future<void> dispose() async {
     if (!_initialized) return;
     if (_sineSource != null) {
@@ -108,6 +150,11 @@ class SoLoudTonePlayer {
     if (_noisySource != null) {
       await _soloud.disposeSource(_noisySource!);
       _noisySource = null;
+    }
+    if (_whiteNoiseSource != null) {
+      await _soloud.disposeSource(_whiteNoiseSource!);
+      _whiteNoiseSource = null;
+      _whiteNoiseDuration = null;
     }
     _soloud.deinit();
     _initialized = false;

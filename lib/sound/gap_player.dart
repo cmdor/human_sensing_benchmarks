@@ -26,10 +26,10 @@ import 'package:flutter_soloud/flutter_soloud.dart';
 ///
 /// Parameters:
 ///   [soloud]         - initialized SoLoud instance
-///   [source]         - waveform AudioSource (already loaded)
+///   [source]         - AudioSource (already loaded)
 ///   [amplitude]      - playback volume 0.0..1.0
 ///   [totalDurationMs]- total wall-clock length of the sound in milliseconds
-///   [baseHz]         - base oscillator frequency (determines static texture)
+///   [baseHz]         - optional base oscillator frequency (waveform sources only)
 ///   [gapStartMs]     - ms from t=0 at which silence begins (null = no gap)
 ///   [gapDurationMs]  - length of silence in ms (null = no gap)
 Future<void> playNoiseWithGap(
@@ -37,34 +37,37 @@ Future<void> playNoiseWithGap(
   AudioSource source, {
   required double amplitude,
   required int totalDurationMs,
-  required double baseHz,
+  double? baseHz,
   int? gapStartMs,
   int? gapDurationMs,
 }) async {
-  soloud.setWaveformFreq(source, baseHz);
+  if (baseHz != null) {
+    soloud.setWaveformFreq(source, baseHz);
+  }
   final vol = amplitude.clamp(0.0, 1.0);
 
   // t=0: start playback.
   final handle = soloud.play(source, volume: vol);
 
-  final hasGap =
-      gapStartMs != null && gapDurationMs != null && gapDurationMs > 0;
+  final startMs = gapStartMs;
+  final durMs = gapDurationMs;
+  final hasGap = startMs != null && durMs != null && durMs > 0;
 
   if (hasGap) {
     // --- Gap path ---
     //
     // schedulePause fires at stream time gapStartMs: audio-thread accurate.
-    soloud.schedulePause(handle, Duration(milliseconds: gapStartMs!));
+    soloud.schedulePause(handle, Duration(milliseconds: startMs));
 
     // scheduleStop counts stream time (pauses while voice is paused).
     // Pass totalDurationMs - gapDurationMs so that after the unpause, stream
     // time only needs to advance the remaining audible portion, making the
     // wall-clock stop land at totalDurationMs.
-    final audibleDuration = (totalDurationMs - gapDurationMs!).clamp(1, totalDurationMs);
+    final audibleDuration = (totalDurationMs - durMs).clamp(1, totalDurationMs);
     soloud.scheduleStop(handle, Duration(milliseconds: audibleDuration));
 
     // Unpause after the gap using a single Dart Timer (no accumulated drift).
-    Timer(Duration(milliseconds: gapStartMs + gapDurationMs), () {
+    Timer(Duration(milliseconds: startMs + durMs), () {
       if (soloud.getIsValidVoiceHandle(handle)) {
         soloud.setPause(handle, false);
       }

@@ -63,7 +63,7 @@ class _SoundGapDetectionPageState extends State<SoundGapDetectionPage> {
   static const Duration _totalDuration = Duration(milliseconds: 900);
   static const double _amplitude = 0.7;
   static const double _initialGapMs = 20.0;
-  static const double _minGapMs = 2.0;
+  static const double _minGapMs = 1.0;
   static const double _maxGapMs = 400.0;
   static const int _stopAfterReversals = 6;
 
@@ -76,14 +76,27 @@ class _SoundGapDetectionPageState extends State<SoundGapDetectionPage> {
   }
 
   TrialRunner<SoundGapTrial, SoundGapGuess> _newRunner() {
+    const staircaseConfig = StaircaseConfig(
+      downInitialPct: 0.50,
+      // Keep UP step unchanged from before.
+      upInitialPct: 0.20,
+      decayFactor: 0.85,
+      downMinPct: 0.05,
+      upMinPct: 0.05,
+      nDown: 2,
+      thresholdLastN: 4,
+    );
     return TrialRunner<SoundGapTrial, SoundGapGuess>(
       initialState: TrialRunnerState(
         startedAt: DateTime.now(),
-        custom: Staircase.initialCustom(initialGapMs: _initialGapMs),
+        custom: Staircase.initialCustom(
+          initialLevel: _initialGapMs,
+          config: staircaseConfig,
+        ),
       ),
       generateTrial: (state) {
         final targetIndex = 1 + _random.nextInt(3);
-        final gapMs = (state.custom[Staircase.kGapMs] as num?)?.toDouble() ?? _initialGapMs;
+        final gapMs = (state.custom[Staircase.kLevel] as num?)?.toDouble() ?? _initialGapMs;
         final gapDuration = Duration(milliseconds: gapMs.round().clamp(1, 10000));
         final staticHz = 3000.0 + _random.nextDouble() * 12000.0; // 3kHz–15kHz
 
@@ -131,15 +144,16 @@ class _SoundGapDetectionPageState extends State<SoundGapDetectionPage> {
       },
       reduceState: (state, score) {
         final presentedGapMs = (score.data['gapMs'] as num?)?.toDouble() ??
-            (state.custom[Staircase.kGapMs] as num?)?.toDouble() ??
+            (state.custom[Staircase.kLevel] as num?)?.toDouble() ??
             _initialGapMs;
 
         final update = Staircase.update(
           custom: state.custom,
           correct: score.correct,
-          presentedGapMs: presentedGapMs,
-          minGapMs: _minGapMs,
-          maxGapMs: _maxGapMs,
+          presentedLevel: presentedGapMs,
+          minLevel: _minGapMs,
+          maxLevel: _maxGapMs,
+          config: staircaseConfig,
         );
 
         final total = state.totalScored + 1;
@@ -170,10 +184,9 @@ class _SoundGapDetectionPageState extends State<SoundGapDetectionPage> {
     setState(() {
       _status = hasGap ? 'Playing $index (target)' : 'Playing $index';
     });
-    await SoLoudTonePlayer.instance.playNoisyWithOptionalGap(
+    await SoLoudTonePlayer.instance.playWhiteNoiseWithOptionalGap(
       amplitude: trial.amplitude,
       totalDuration: trial.totalDuration,
-      baseHz: trial.staticHz,
       gapStart: hasGap ? trial.gapStart : null,
       gapDuration: hasGap ? trial.gapDuration : null,
     );
@@ -193,8 +206,8 @@ class _SoundGapDetectionPageState extends State<SoundGapDetectionPage> {
     setState(() {
       final stepPct = (_runner.state.custom[Staircase.kStepPct] as num?)?.toDouble();
       final reversalCount = (_runner.state.custom[Staircase.kReversalCount] as num?)?.toInt();
-      final thresh = (_runner.state.custom[Staircase.kThresholdMs] as num?)?.toDouble();
-      final sd = (_runner.state.custom[Staircase.kThresholdSdMs] as num?)?.toDouble();
+      final thresh = (_runner.state.custom[Staircase.kThreshold] as num?)?.toDouble();
+      final sd = (_runner.state.custom[Staircase.kThresholdSd] as num?)?.toDouble();
       final pctText = stepPct == null ? '' : ' stepPct=${(stepPct * 100).toStringAsFixed(1)}%';
       final revText = reversalCount == null ? '' : ' reversals=$reversalCount';
       final threshText = (thresh != null && sd != null)
@@ -245,19 +258,20 @@ class _SoundGapDetectionPageState extends State<SoundGapDetectionPage> {
                 SessionStatsBar(runner: _runner),
                 const SizedBox(height: 16),
                 StaircaseChart(
-                  gapsMs: (( _runner.state.custom[Staircase.kTrialGapHistory] as List?) ?? const [])
+                  levelsHistory: ((_runner.state.custom[Staircase.kLevelHistory] as List?) ?? const [])
                       .whereType<num>()
                       .map((x) => x.toDouble())
                       .toList(growable: false),
-                  correct: (( _runner.state.custom[Staircase.kTrialCorrectHistory] as List?) ?? const [])
+                  correct: ((_runner.state.custom[Staircase.kCorrectHistory] as List?) ?? const [])
                       .whereType<bool>()
                       .toList(growable: false),
-                  thresholdMs: _runner.state.finished
-                      ? (_runner.state.custom[Staircase.kThresholdMs] as num?)?.toDouble()
+                  threshold: _runner.state.finished
+                      ? (_runner.state.custom[Staircase.kThreshold] as num?)?.toDouble()
                       : null,
-                  thresholdSdMs: _runner.state.finished
-                      ? (_runner.state.custom[Staircase.kThresholdSdMs] as num?)?.toDouble()
+                  thresholdSd: _runner.state.finished
+                      ? (_runner.state.custom[Staircase.kThresholdSd] as num?)?.toDouble()
                       : null,
+                  yAxisLabel: 'ms',
                 ),
                 const SizedBox(height: 16),
                 const Text(

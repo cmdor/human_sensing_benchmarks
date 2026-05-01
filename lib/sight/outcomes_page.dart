@@ -157,17 +157,17 @@ class SessionDetailPage extends StatelessWidget {
     final custom = (session.summary['custom'] is Map)
         ? Map<String, Object?>.from((session.summary['custom'] as Map).cast<String, Object?>())
         : const <String, Object?>{};
-    final gaps = (custom[Staircase.kTrialGapHistory] as List?)
+    final gaps = (custom[Staircase.kLevelHistory] as List?)
             ?.whereType<num>()
             .map((x) => x.toDouble())
             .toList(growable: false) ??
         const <double>[];
-    final correct = (custom[Staircase.kTrialCorrectHistory] as List?)
+    final correct = (custom[Staircase.kCorrectHistory] as List?)
             ?.whereType<bool>()
             .toList(growable: false) ??
         const <bool>[];
-    final thresholdMs = (custom[Staircase.kThresholdMs] as num?)?.toDouble();
-    final thresholdSdMs = (custom[Staircase.kThresholdSdMs] as num?)?.toDouble();
+    final thresholdMs = (custom[Staircase.kThreshold] as num?)?.toDouble();
+    final thresholdSdMs = (custom[Staircase.kThresholdSd] as num?)?.toDouble();
     return Scaffold(
       appBar: AppBar(
         title: const Text('Session detail'),
@@ -190,10 +190,11 @@ class SessionDetailPage extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             StaircaseChart(
-              gapsMs: gaps,
+              levelsHistory: gaps,
               correct: correct,
-              thresholdMs: thresholdMs,
-              thresholdSdMs: thresholdSdMs,
+              threshold: thresholdMs,
+              thresholdSd: thresholdSdMs,
+              yAxisLabel: 'ms',
             ),
             const SizedBox(height: 16),
             const Text(
