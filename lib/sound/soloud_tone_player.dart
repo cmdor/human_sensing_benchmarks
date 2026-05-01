@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter_soloud/flutter_soloud.dart';
+import 'gap_player.dart';
 
 /// Minimal helper to play short procedural sine tones via SoLoud.
 ///
@@ -9,6 +11,7 @@ class SoLoudTonePlayer {
   SoLoudTonePlayer._();
 
   static final SoLoudTonePlayer instance = SoLoudTonePlayer._();
+  static final Random _rng = Random();
 
   final SoLoud _soloud = SoLoud.instance;
   bool _initialized = false;
@@ -42,16 +45,14 @@ class SoLoudTonePlayer {
     if (_noisySource != null) return _noisySource!;
 
     // flutter_soloud does not currently expose a dedicated "white noise" waveform.
-    // As a practical stand-in, we use a super filtered saw with detune/scale to
-    // produce a broadband, noise-like texture for gap-detection tasks.
+    // As a practical stand-in, we use a harsh super square with heavy detune/scale.
+    // We also randomize the base frequency per play to avoid a stable pitch.
     _noisySource = await _soloud.loadWaveform(
-      WaveForm.fSaw,
+      WaveForm.square,
       true, // superWave
-      2.0, // scale
-      0.18, // detune
+      8.0, // scale
+      0.65, // detune
     );
-    // A high-ish base frequency yields a hiss-like sound.
-    _soloud.setWaveformFreq(_noisySource!, 8000.0);
     return _noisySource!;
   }
 
@@ -82,32 +83,19 @@ class SoLoudTonePlayer {
   Future<void> playNoisyWithOptionalGap({
     required double amplitude,
     required Duration totalDuration,
+    double? baseHz,
     Duration? gapStart,
     Duration? gapDuration,
   }) async {
     final source = await _ensureNoisySource();
-    final handle = _soloud.play(source, volume: amplitude.clamp(0.0, 1.0));
-
-    final start = gapStart;
-    final dur = gapDuration;
-    if (start != null && dur != null && start > Duration.zero && dur > Duration.zero) {
-      unawaited(
-        Future<void>.delayed(start, () async {
-          _soloud.setVolume(handle, 0.0);
-        }),
-      );
-      unawaited(
-        Future<void>.delayed(start + dur, () async {
-          _soloud.setVolume(handle, amplitude.clamp(0.0, 1.0));
-        }),
-      );
-    }
-
-    _soloud.fadeVolume(handle, 0.0, totalDuration);
-    unawaited(
-      Future<void>.delayed(totalDuration, () async {
-        await _soloud.stop(handle);
-      }),
+    await playNoiseWithGap(
+      _soloud,
+      source,
+      amplitude: amplitude,
+      totalDurationMs: totalDuration.inMilliseconds,
+      baseHz: baseHz ?? (3000.0 + _rng.nextDouble() * 12000.0),
+      gapStartMs: gapStart?.inMilliseconds,
+      gapDurationMs: gapDuration?.inMilliseconds,
     );
   }
 

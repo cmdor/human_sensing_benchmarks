@@ -20,6 +20,7 @@ class SoundGapTrial {
   const SoundGapTrial({
     required this.targetIndex,
     required this.gapMs,
+    required this.staticHz,
     required this.totalDuration,
     required this.gapStart,
     required this.gapDuration,
@@ -28,6 +29,7 @@ class SoundGapTrial {
 
   final int targetIndex; // 1..3
   final double gapMs;
+  final double staticHz;
   final Duration totalDuration;
   final Duration gapStart;
   final Duration gapDuration;
@@ -83,6 +85,7 @@ class _SoundGapDetectionPageState extends State<SoundGapDetectionPage> {
         final targetIndex = 1 + _random.nextInt(3);
         final gapMs = (state.custom[Staircase.kGapMs] as num?)?.toDouble() ?? _initialGapMs;
         final gapDuration = Duration(milliseconds: gapMs.round().clamp(1, 10000));
+        final staticHz = 3000.0 + _random.nextDouble() * 12000.0; // 3kHz–15kHz
 
         // Place gap around midpoint; adjust so it fits.
         final midMs = (_totalDuration.inMilliseconds / 2).round();
@@ -95,6 +98,7 @@ class _SoundGapDetectionPageState extends State<SoundGapDetectionPage> {
         return SoundGapTrial(
           targetIndex: targetIndex,
           gapMs: gapMs,
+          staticHz: staticHz,
           totalDuration: _totalDuration,
           gapStart: Duration(milliseconds: startMs),
           gapDuration: gapDuration,
@@ -169,6 +173,7 @@ class _SoundGapDetectionPageState extends State<SoundGapDetectionPage> {
     await SoLoudTonePlayer.instance.playNoisyWithOptionalGap(
       amplitude: trial.amplitude,
       totalDuration: trial.totalDuration,
+      baseHz: trial.staticHz,
       gapStart: hasGap ? trial.gapStart : null,
       gapDuration: hasGap ? trial.gapDuration : null,
     );
