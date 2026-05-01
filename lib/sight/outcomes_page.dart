@@ -148,7 +148,7 @@ class _OutcomesPageState extends State<OutcomesPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Outcomes'),
+        title: const Text('All Outcomes'),
         actions: [
           IconButton(
             onPressed: _reload,

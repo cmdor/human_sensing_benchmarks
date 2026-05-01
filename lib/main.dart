@@ -20,7 +20,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
+      title: 'Health sensing trials',
       theme: ThemeData(
         // This is the theme of your application.
         //
@@ -47,25 +47,36 @@ class MyApp extends StatelessWidget {
 class TrialHomePage extends StatelessWidget {
   const TrialHomePage({super.key});
 
+  static TextStyle _sectionTitle(BuildContext context) {
+    final base = Theme.of(context).textTheme.titleSmall;
+    return (base ?? const TextStyle(fontSize: 14)).copyWith(
+      fontWeight: FontWeight.w600,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Visual Trials'),
+        title: const Text('Trials'),
       ),
-      body: Center(
-        child: Padding(
+      body: Align(
+        alignment: Alignment.topCenter,
+        child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 420),
             child: Column(
-              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 const Text(
                   'Choose a trial:',
+                  textAlign: TextAlign.center,
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 20),
+                Text('Visual Trials', style: _sectionTitle(context)),
+                const SizedBox(height: 12),
                 FilledButton(
                   onPressed: () {
                     Navigator.of(context).push(
@@ -87,19 +98,10 @@ class TrialHomePage extends StatelessWidget {
                   },
                   child: const Text('E Rotation Trial'),
                 ),
+                const SizedBox(height: 20),
+                Text('Sound Trials', style: _sectionTitle(context)),
                 const SizedBox(height: 12),
-                FilledButton.tonal(
-                  onPressed: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => const OutcomesPage(),
-                      ),
-                    );
-                  },
-                  child: const Text('Outcomes'),
-                ),
-                const SizedBox(height: 12),
-                FilledButton.tonal(
+                FilledButton(
                   onPressed: () {
                     Navigator.of(context).push(
                       MaterialPageRoute<void>(
@@ -110,7 +112,7 @@ class TrialHomePage extends StatelessWidget {
                   child: const Text('Pitch Frequency Range'),
                 ),
                 const SizedBox(height: 12),
-                FilledButton.tonal(
+                FilledButton(
                   onPressed: () {
                     Navigator.of(context).push(
                       MaterialPageRoute<void>(
@@ -121,7 +123,7 @@ class TrialHomePage extends StatelessWidget {
                   child: const Text('Sound Gap Detection'),
                 ),
                 const SizedBox(height: 12),
-                FilledButton.tonal(
+                FilledButton(
                   onPressed: () {
                     Navigator.of(context).push(
                       MaterialPageRoute<void>(
@@ -132,7 +134,7 @@ class TrialHomePage extends StatelessWidget {
                   child: const Text('Pitch JND'),
                 ),
                 const SizedBox(height: 12),
-                FilledButton.tonal(
+                FilledButton(
                   onPressed: () {
                     Navigator.of(context).push(
                       MaterialPageRoute<void>(
@@ -142,96 +144,23 @@ class TrialHomePage extends StatelessWidget {
                   },
                   child: const Text('Amplitude JND'),
                 ),
+                const SizedBox(height: 20),
+                Text('All Outcomes and Charts', style: _sectionTitle(context)),
+                const SizedBox(height: 12),
+                FilledButton(
+                  onPressed: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const OutcomesPage(),
+                      ),
+                    );
+                  },
+                  child: const Text('All Outcomes'),
+                ),
               ],
             ),
           ),
         ),
-      ),
-    );
-  }
-}
-
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
-
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
-  final String title;
-
-  @override
-  State<MyHomePage> createState() => _MyHomePageState();
-}
-
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
-
-  void _incrementCounter() {
-    setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
-    return Scaffold(
-      appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
-      ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
-        child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Text('You have pushed the button this many times:'),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
-            ),
-          ],
-        ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
       ),
     );
   }
