@@ -83,7 +83,7 @@ class _SoundGapDetectionPageState extends State<SoundGapDetectionPage> {
   static const double _amplitude = 0.7;
   static const int _rampMs = 2;
   static const double _initialGapMs = 120.0;
-  static const double _minGapMs = 1.0;
+  static const double _minGapMs = 0.0000001;
   static const double _maxGapMs = 400.0;
   static const int _stopAfterReversals = 6;
 
@@ -117,7 +117,7 @@ class _SoundGapDetectionPageState extends State<SoundGapDetectionPage> {
       generateTrial: (state) {
         final targetIndex = 1 + _random.nextInt(3);
         final gapMs = (state.custom[Staircase.kLevel] as num?)?.toDouble() ?? _initialGapMs;
-        final gapDuration = Duration(milliseconds: gapMs.round().clamp(1, 10000));
+        final gapDuration = Duration(milliseconds: gapMs.round().clamp(0, 10000));
         final seed = _random.nextInt(1 << 31);
 
         // Place SILENCE (zeros) exactly at the midpoint of the clip.
@@ -125,8 +125,11 @@ class _SoundGapDetectionPageState extends State<SoundGapDetectionPage> {
         final totalMs = _totalDuration.inMilliseconds;
         final minStart = 80 + _rampMs;
         final maxStart = totalMs - 80 - _rampMs - gapDuration.inMilliseconds;
-        // Bias slightly earlier than center so it's easier to notice.
-        const earlyBiasMs = 300.0;
+        // Randomize bias earlier than center so the listener can't rely on a
+        // single fixed temporal position.
+        //
+        // Requirement: random number between 100 and 500 ms.
+        final earlyBiasMs = 100.0 + _random.nextDouble() * 400.0; // [100, 500)
         final idealStart = (totalMs - gapDuration.inMilliseconds) / 2.0 - earlyBiasMs;
         final int startMs = idealStart
             .clamp(minStart.toDouble(), max(minStart.toDouble(), maxStart.toDouble()))
