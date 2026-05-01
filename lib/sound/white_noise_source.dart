@@ -1,34 +1,128 @@
-import 'dart:math';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter_soloud/flutter_soloud.dart';
 
-/// Builds an [AudioSource] containing PCM white noise.
+
+/// Deterministic white-noise PCM generator.
 ///
-/// This uses SoLoud's buffer-stream API so we can feed raw PCM samples
-/// (true broadband noise) rather than a tonal procedural waveform.
-///
-/// Notes:
-/// - Callers must ensure `soloud.init()` has completed.
-/// - We set [bufferingTimeNeeds] small so short (<2s) streams don't buffer forever.
-AudioSource buildWhiteNoiseSource(
-  SoLoud soloud, {
+/// Returns interleaved f32 samples in the range [-1, 1].
+Float32List buildWhiteNoisePcm({
   required Duration duration,
   int sampleRate = 44100,
   Channels channels = Channels.mono,
-  int? seed,
+  required int seed,
 }) {
-  final rng = seed == null ? Random() : Random(seed);
-  final frames = (duration.inMilliseconds * sampleRate / 1000).round().clamp(1, 1 << 30);
-  final channelCount = channels.count;
-  final samples = Float32List(frames * channelCount);
-  for (var i = 0; i < samples.length; i++) {
-    // Uniform white noise in [-1, 1].
-    samples[i] = (rng.nextDouble() * 2.0 - 1.0).toDouble();
+  // Tiny deterministic PRNG (xorshift32) so we don't rely on dart:math Random
+  // algorithm details for reproducibility.
+  var x = seed == 0 ? 0x12345678 : seed;
+  int nextU32() {
+    x ^= (x << 13);
+    x ^= (x >> 17);
+    x ^= (x << 5);
+    return x;
   }
 
-  // Float32 little-endian PCM.
-  final bytes = samples.buffer.asUint8List();
+  double nextF() => ((nextU32() & 0xFFFFFFFF) / 0xFFFFFFFF) * 2.0 - 1.0;
+
+  final frames =
+      (duration.inMilliseconds * sampleRate / 1000).round().clamp(1, 1 << 30);
+  final channelCount = channels.count;
+  final out = Float32List(frames * channelCount);
+  for (var i = 0; i < out.length; i++) {
+    out[i] = nextF().toDouble();
+  }
+  return out;
+}
+
+/// Returns a copy of [pcm] with a silent gap inserted.
+///
+/// A half-cosine ramp of [rampMs] ms is applied at both gap edges to avoid
+/// the click that an instantaneous step to/from zero would produce.
+///
+/// Layout (time →):
+///   noise | fade-out (rampMs) | silence (gapDurationMs) | fade-in (rampMs) | noise
+///
+/// Contract: the region \([gapStartMs, gapStartMs + gapDurationMs)\) is written
+/// as **literal zeros** (full silence). The ramps happen immediately before and
+/// after that interval so the ramps do not “steal” time from the silence.
+Float32List withGapZeros({
+  required Float32List pcm,
+  int sampleRate = 44100,
+  Channels channels = Channels.mono,
+  required int gapStartMs,
+  required int gapDurationMs,
+  int rampMs = 2,
+}) {
+  final channelCount = channels.count;
+  final totalFrames = pcm.length ~/ channelCount;
+  final out = Float32List.fromList(pcm);
+
+  int msToFramesFloor(int ms) =>
+      ((ms / 1000.0) * sampleRate).floor().clamp(0, totalFrames);
+  int msToFramesCeil(int ms) =>
+      ((ms / 1000.0) * sampleRate).ceil().clamp(0, totalFrames);
+
+  // Use floor for start and ceil for end so the silent region is never shorter
+  // than requested due to rounding.
+  final rampFrames = msToFramesCeil(rampMs);
+  final gapStartFrame = msToFramesFloor(gapStartMs);
+  final gapEndFrame = msToFramesCeil(gapStartMs + gapDurationMs);
+
+  final gapStart = gapStartFrame.clamp(0, totalFrames);
+  final gapEnd = gapEndFrame.clamp(gapStart, totalFrames);
+
+  // --- fade-out ramp before the gap ---
+  // Starts at gapStart - rampFrames (or 0), amplitude goes 1 → 0.
+  final fadeOutStart = (gapStart - rampFrames).clamp(0, totalFrames);
+  for (var f = fadeOutStart; f < gapStart; f++) {
+    final denom = (gapStart - fadeOutStart).clamp(1, 1 << 30);
+    final phase = (f - fadeOutStart) / denom;
+    // half-cosine: 1 at phase=0, 0 at phase=1
+    final gain = 0.5 * (1.0 + math.cos(math.pi * phase));
+    for (var c = 0; c < channelCount; c++) {
+      out[f * channelCount + c] *= gain;
+    }
+  }
+
+  // --- silence in the gap ---
+  for (var f = gapStart; f < gapEnd; f++) {
+    for (var c = 0; c < channelCount; c++) {
+      out[f * channelCount + c] = 0.0;
+    }
+  }
+
+  // --- fade-in ramp after the gap ---
+  // Ends at gapEnd + rampFrames (or totalFrames), amplitude goes 0 → 1.
+  final fadeInEnd = (gapEnd + rampFrames).clamp(0, totalFrames);
+  for (var f = gapEnd; f < fadeInEnd; f++) {
+    final denom = (fadeInEnd - gapEnd).clamp(1, 1 << 30);
+    final phase = (f - gapEnd) / denom;
+    // half-cosine: 0 at phase=0, 1 at phase=1
+    final gain = 0.5 * (1.0 - math.cos(math.pi * phase));
+    for (var c = 0; c < channelCount; c++) {
+      out[f * channelCount + c] *= gain;
+    }
+  }
+
+  return out;
+}
+
+/// Builds a SoLoud buffer stream AudioSource from f32le PCM.
+///
+/// Notes:
+/// - Callers must ensure `soloud.init()` has completed.
+/// - We set [bufferingTimeNeeds] to 0 so sub-2s clips don't buffer indefinitely.
+AudioSource buildPcmStreamSource(
+  SoLoud soloud, {
+  required Float32List pcm,
+  int sampleRate = 44100,
+  Channels channels = Channels.mono,
+}) {
+  final bytes = pcm.buffer.asUint8List();
+  final durationMs =
+      ((pcm.length / channels.count) / sampleRate * 1000.0).round().clamp(1, 1 << 30);
+  final duration = Duration(milliseconds: durationMs);
 
   final source = soloud.setBufferStream(
     maxBufferSizeDuration: duration,

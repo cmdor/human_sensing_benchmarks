@@ -1,12 +1,16 @@
 import 'dart:math';
+import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_soloud/flutter_soloud.dart';
 
 import '../utils/outcomes.dart';
 import '../utils/session_store.dart';
 import '../utils/staircase.dart';
 import '../utils/trial_framework.dart';
 import '../utils/trial_widgets.dart';
+import 'white_noise_source.dart';
 import 'soloud_tone_player.dart';
 
 int? trialRunnerStateCustomInt(Map<String, Object?> custom, String key) {
@@ -18,18 +22,20 @@ int? trialRunnerStateCustomInt(Map<String, Object?> custom, String key) {
 
 class SoundGapTrial {
   const SoundGapTrial({
+    required this.trialId,
     required this.targetIndex,
     required this.gapMs,
-    required this.staticHz,
+    required this.seed,
     required this.totalDuration,
     required this.gapStart,
     required this.gapDuration,
     required this.amplitude,
   });
 
+  final int trialId;
   final int targetIndex; // 1..3
   final double gapMs;
-  final double staticHz;
+  final int seed;
   final Duration totalDuration;
   final Duration gapStart;
   final Duration gapDuration;
@@ -39,6 +45,18 @@ class SoundGapTrial {
 class SoundGapGuess {
   const SoundGapGuess(this.selectedIndex);
   final int selectedIndex; // 1..3
+}
+
+/// Cached PCM data for one trial.  Both buffers share the same base noise;
+/// [target] has zeros (with cosine ramps) inserted at the gap window.
+/// Storing Float32List (not AudioSource) means we can create a fresh stream
+/// source on every play call, which guarantees the read-pointer is always at
+/// position 0 and sidesteps all BufferingType replay quirks.
+class _TrialPcm {
+  const _TrialPcm({required this.reference, required this.target});
+
+  final Float32List reference;
+  final Float32List target;
 }
 
 class SoundGapDetectionPage extends StatefulWidget {
@@ -53,6 +71,7 @@ class _SoundGapDetectionPageState extends State<SoundGapDetectionPage> {
   final SessionStore _store = SessionStore();
 
   late TrialRunner<SoundGapTrial, SoundGapGuess> _runner;
+  final Map<int, _TrialPcm> _pcmByTrialId = <int, _TrialPcm>{};
   List<TrialOutcome> _outcomes = const <TrialOutcome>[];
   bool _savedSession = false;
   String _status = 'Press an option to play it and select which one had a gap.';
@@ -62,7 +81,8 @@ class _SoundGapDetectionPageState extends State<SoundGapDetectionPage> {
   static const int _numOptions = 3;
   static const Duration _totalDuration = Duration(milliseconds: 900);
   static const double _amplitude = 0.7;
-  static const double _initialGapMs = 20.0;
+  static const int _rampMs = 2;
+  static const double _initialGapMs = 120.0;
   static const double _minGapMs = 1.0;
   static const double _maxGapMs = 400.0;
   static const int _stopAfterReversals = 6;
@@ -98,20 +118,25 @@ class _SoundGapDetectionPageState extends State<SoundGapDetectionPage> {
         final targetIndex = 1 + _random.nextInt(3);
         final gapMs = (state.custom[Staircase.kLevel] as num?)?.toDouble() ?? _initialGapMs;
         final gapDuration = Duration(milliseconds: gapMs.round().clamp(1, 10000));
-        final staticHz = 3000.0 + _random.nextDouble() * 12000.0; // 3kHz–15kHz
+        final seed = _random.nextInt(1 << 31);
 
-        // Place gap around midpoint; adjust so it fits.
-        final midMs = (_totalDuration.inMilliseconds / 2).round();
-        final int maxStart =
-            _totalDuration.inMilliseconds - gapDuration.inMilliseconds - 80;
-        final int startMs = (midMs - (gapDuration.inMilliseconds / 2))
-            .clamp(80, max(80, maxStart))
-            .toInt();
+        // Place SILENCE (zeros) exactly at the midpoint of the clip.
+        // (gapStart is the start of the *silent* region; ramps are outside it.)
+        final totalMs = _totalDuration.inMilliseconds;
+        final minStart = 80 + _rampMs;
+        final maxStart = totalMs - 80 - _rampMs - gapDuration.inMilliseconds;
+        // Bias slightly earlier than center so it's easier to notice.
+        const earlyBiasMs = 300.0;
+        final idealStart = (totalMs - gapDuration.inMilliseconds) / 2.0 - earlyBiasMs;
+        final int startMs = idealStart
+            .clamp(minStart.toDouble(), max(minStart.toDouble(), maxStart.toDouble()))
+            .round();
 
         return SoundGapTrial(
+          trialId: state.trialIndex,
           targetIndex: targetIndex,
           gapMs: gapMs,
-          staticHz: staticHz,
+          seed: seed,
           totalDuration: _totalDuration,
           gapStart: Duration(milliseconds: startMs),
           gapDuration: gapDuration,
@@ -182,14 +207,55 @@ class _SoundGapDetectionPageState extends State<SoundGapDetectionPage> {
 
     final hasGap = index == trial.targetIndex;
     setState(() {
-      _status = hasGap ? 'Playing $index (target)' : 'Playing $index';
+      var s = 'Playing $index${hasGap ? ' (has gap)' : ''}…';
+      if (kDebugMode && hasGap) {
+        const sampleRate = 44100;
+        final startFrames = ((trial.gapStart.inMilliseconds / 1000.0) * sampleRate).floor();
+        final endFrames = (((trial.gapStart.inMilliseconds + trial.gapDuration.inMilliseconds) / 1000.0) *
+                sampleRate)
+            .ceil();
+        final gapFrames = max(0, endFrames - startFrames);
+        final effectiveMs = gapFrames / sampleRate * 1000.0;
+        s +=
+            ' gapReq=${trial.gapDuration.inMilliseconds}ms gapFrames=$gapFrames eff=${effectiveMs.toStringAsFixed(2)}ms ramp=${_rampMs}ms';
+      }
+      _status = s;
     });
-    await SoLoudTonePlayer.instance.playWhiteNoiseWithOptionalGap(
+
+    // PCM is cached; a fresh AudioSource is created per play inside
+    // playCachedPcm, so the stream read-pointer is always at position 0.
+    final pcm = _ensureTrialPcm(trial);
+    await SoLoudTonePlayer.instance.playCachedPcm(
+      pcm: hasGap ? pcm.target : pcm.reference,
       amplitude: trial.amplitude,
       totalDuration: trial.totalDuration,
-      gapStart: hasGap ? trial.gapStart : null,
-      gapDuration: hasGap ? trial.gapDuration : null,
     );
+  }
+
+  _TrialPcm _ensureTrialPcm(SoundGapTrial trial) {
+    final existing = _pcmByTrialId[trial.trialId];
+    if (existing != null) return existing;
+
+    const sampleRate = 44100;
+    const channels = Channels.mono;
+
+    final reference = buildWhiteNoisePcm(
+      duration: trial.totalDuration,
+      sampleRate: sampleRate,
+      channels: channels,
+      seed: trial.seed,
+    );
+    final target = withGapZeros(
+      pcm: reference,
+      sampleRate: sampleRate,
+      channels: channels,
+      gapStartMs: trial.gapStart.inMilliseconds,
+      gapDurationMs: trial.gapDuration.inMilliseconds,
+    );
+
+    final pcm = _TrialPcm(reference: reference, target: target);
+    _pcmByTrialId[trial.trialId] = pcm;
+    return pcm;
   }
 
   void _submit() {
@@ -241,6 +307,7 @@ class _SoundGapDetectionPageState extends State<SoundGapDetectionPage> {
       _playCounts = List<int>.filled(3, 0, growable: false);
       _status = 'Press an option to play it and select which one had a gap.';
     });
+    _pcmByTrialId.clear();
   }
 
   @override

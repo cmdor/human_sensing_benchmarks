@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:flutter_soloud/flutter_soloud.dart';
 import 'gap_player.dart';
@@ -69,14 +70,77 @@ class SoLoudTonePlayer {
       _whiteNoiseSource = null;
       _whiteNoiseDuration = null;
     }
-    _whiteNoiseSource = buildWhiteNoiseSource(
+    _whiteNoiseSource = buildPcmStreamSource(
       _soloud,
-      duration: duration,
+      pcm: buildWhiteNoisePcm(
+        duration: duration,
+        sampleRate: 44100,
+        channels: Channels.mono,
+        seed: _rng.nextInt(1 << 31),
+      ),
       sampleRate: 44100,
       channels: Channels.mono,
     );
     _whiteNoiseDuration = duration;
     return _whiteNoiseSource!;
+  }
+
+  Future<void> playSourceOnce({
+    required AudioSource source,
+    required double amplitude,
+    required Duration totalDuration,
+  }) async {
+    await _ensureInit();
+    final handle = _soloud.play(source, volume: amplitude.clamp(0.0, 1.0));
+    _soloud.scheduleStop(handle, totalDuration);
+  }
+
+  Future<void> disposeSource(AudioSource source) async {
+    if (!_initialized) return;
+    await _soloud.disposeSource(source);
+  }
+
+  /// Play pre-generated PCM data once, then dispose the source automatically.
+  ///
+  /// A fresh [AudioSource] is created from [pcm] on every call so that the
+  /// stream read-pointer is always at position 0.  The source is disposed
+  /// ~100 ms after [totalDuration] to let [scheduleStop] settle first.
+  ///
+  /// This is the preferred API for gap-detection clips that the user may play
+  /// multiple times per trial.
+  Future<void> playCachedPcm({
+    required Float32List pcm,
+    required double amplitude,
+    required Duration totalDuration,
+    int sampleRate = 44100,
+    Channels channels = Channels.mono,
+  }) async {
+    await _ensureInit();
+    final source = buildPcmStreamSource(
+      _soloud,
+      pcm: pcm,
+      sampleRate: sampleRate,
+      channels: channels,
+    );
+    final handle = _soloud.play(source, volume: amplitude.clamp(0.0, 1.0));
+    _soloud.scheduleStop(handle, totalDuration);
+    Timer(totalDuration + const Duration(milliseconds: 120), () {
+      unawaited(_soloud.disposeSource(source));
+    });
+  }
+
+  Future<AudioSource> createPcmStreamSource({
+    required Float32List pcm,
+    int sampleRate = 44100,
+    Channels channels = Channels.mono,
+  }) async {
+    await _ensureInit();
+    return buildPcmStreamSource(
+      _soloud,
+      pcm: pcm,
+      sampleRate: sampleRate,
+      channels: channels,
+    );
   }
 
   /// Play a sine tone. Returns once playback has been started.
