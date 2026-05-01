@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_soloud/flutter_soloud.dart';
 
 import '../utils/outcomes.dart';
+import '../utils/session_experiment_meta.dart';
 import '../utils/session_store.dart';
 import '../utils/staircase.dart';
 import '../utils/trial_framework.dart';
@@ -286,10 +287,11 @@ class _SoundGapDetectionPageState extends State<SoundGapDetectionPage> {
     });
     _store.appendSession(
       _runner.report,
-      <String, Object?>{
-        ..._runner.summaryJson(),
-        'experimentKind': 'sound_gap_detection',
-      },
+      mergeExperimentIntoSummary(
+        _runner.summaryJson(),
+        experimentKind: kExperimentSoundGapDetection,
+        experimentTitle: 'Sound Gap Detection',
+      ),
     );
   }
 

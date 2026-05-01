@@ -5,6 +5,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../utils/session_experiment_meta.dart';
 import '../utils/trial_framework.dart';
 import '../utils/outcomes.dart';
 import '../utils/session_store.dart';
@@ -316,7 +317,14 @@ class _ERotationTrialPageState extends State<_ERotationTrialPage> {
     setState(() {
       _outcomes = outcomes;
     });
-    _store.appendSession(_runner.report, _runner.summaryJson());
+    _store.appendSession(
+      _runner.report,
+      mergeExperimentIntoSummary(
+        _runner.summaryJson(),
+        experimentKind: kExperimentERotation,
+        experimentTitle: 'E Rotation Trial',
+      ),
+    );
   }
 
   void _restart() {

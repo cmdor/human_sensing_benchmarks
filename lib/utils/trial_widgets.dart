@@ -194,6 +194,7 @@ class OutcomesChart extends StatelessWidget {
   Widget build(BuildContext context) {
     return SizedBox(
       height: height,
+      width: double.infinity,
       child: DecoratedBox(
         decoration: BoxDecoration(
           color: Theme.of(context).colorScheme.surfaceContainerHighest,
@@ -202,6 +203,7 @@ class OutcomesChart extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.all(12),
           child: CustomPaint(
+            size: Size.infinite,
             painter: _OutcomesChartPainter(
               outcomes: outcomes,
               axisColor: Theme.of(context).colorScheme.outline,
@@ -264,27 +266,19 @@ class _OutcomesChartPainter extends CustomPainter {
     canvas.drawLine(chart.bottomLeft, chart.bottomRight, axisPaint);
     canvas.drawLine(chart.bottomLeft, chart.topLeft, axisPaint);
 
-    // Y labels: min/max
     _drawText(
       canvas,
-      Offset(0, chart.bottom - 8),
-      '${minRt}ms',
-    );
-    // Also label the baseline at the axis so it's visually unambiguous.
-    _drawText(
-      canvas,
-      Offset(chart.left + 4, chart.bottom - 8),
+      Offset(chart.left + 4, chart.bottom - 10),
       '${minRt}ms',
     );
     _drawText(
       canvas,
-      Offset(0, chart.top - 4),
+      Offset(chart.left + 4, chart.top - 4),
       '${maxRt}ms',
     );
 
-    // Axis labels
     _drawText(canvas, Offset(chart.left + chart.width / 2 - 16, chart.bottom + 2), 'Trial');
-    _drawText(canvas, Offset(0, chart.top + chart.height / 2 - 6), 'ms');
+    _drawText(canvas, Offset(8, chart.top + chart.height / 2 - 6), 'ms');
 
     final n = outcomes.length;
     if (n == 1) {

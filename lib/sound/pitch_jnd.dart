@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_soloud/flutter_soloud.dart';
 
 import '../utils/outcomes.dart';
+import '../utils/session_experiment_meta.dart';
 import '../utils/session_store.dart';
 import '../utils/staircase.dart';
 import '../utils/trial_framework.dart';
@@ -270,10 +271,11 @@ class _PitchJndPageState extends State<PitchJndPage> {
     });
     _store.appendSession(
       _runner.report,
-      <String, Object?>{
-        ..._runner.summaryJson(),
-        'experimentKind': 'pitch_jnd',
-      },
+      mergeExperimentIntoSummary(
+        _runner.summaryJson(),
+        experimentKind: kExperimentPitchJnd,
+        experimentTitle: 'Pitch JND',
+      ),
     );
   }
 

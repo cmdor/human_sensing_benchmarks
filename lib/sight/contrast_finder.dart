@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 
 import 'dart:math';
 
+import '../utils/session_experiment_meta.dart';
 import '../utils/trial_framework.dart';
 import '../utils/outcomes.dart';
 import '../utils/session_store.dart';
@@ -126,7 +127,14 @@ class _ContrastFinderState extends State<ContrastFinder> {
       _outcomes = outcomes;
     });
     // Fire-and-forget persist.
-    _store.appendSession(_runner.report, _runner.summaryJson());
+    _store.appendSession(
+      _runner.report,
+      mergeExperimentIntoSummary(
+        _runner.summaryJson(),
+        experimentKind: kExperimentContrastFinder,
+        experimentTitle: 'Contrast Finder',
+      ),
+    );
   }
 
   void _restart() {

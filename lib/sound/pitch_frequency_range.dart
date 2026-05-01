@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 
 import '../utils/outcomes.dart';
+import '../utils/session_experiment_meta.dart';
 import '../utils/session_store.dart';
 import '../utils/trial_framework.dart';
 import '../utils/trial_widgets.dart';
@@ -270,7 +271,14 @@ class _PitchFrequencyRangePageState extends State<PitchFrequencyRangePage> {
       _outcomes = outcomes;
       _status = 'Finished.';
     });
-    _store.appendSession(_runner.report, _runner.summaryJson());
+    _store.appendSession(
+      _runner.report,
+      mergeExperimentIntoSummary(
+        _runner.summaryJson(),
+        experimentKind: kExperimentPitchFrequencyRange,
+        experimentTitle: 'Pitch Frequency Range',
+      ),
+    );
   }
 
   void _restart() {
