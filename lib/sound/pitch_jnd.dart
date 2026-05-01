@@ -274,7 +274,7 @@ class _PitchJndPageState extends State<PitchJndPage> {
       mergeExperimentIntoSummary(
         _runner.summaryJson(),
         experimentKind: kExperimentPitchJnd,
-        experimentTitle: 'Pitch JND',
+        experimentTitle: 'Pitch Just Noticeable Difference',
       ),
     );
   }
@@ -304,7 +304,7 @@ class _PitchJndPageState extends State<PitchJndPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Pitch JND')),
+      appBar: AppBar(title: const Text('Pitch Just Noticeable Difference')),
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),

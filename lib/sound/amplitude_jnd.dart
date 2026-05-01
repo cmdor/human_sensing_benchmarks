@@ -289,7 +289,7 @@ class _AmplitudeJndPageState extends State<AmplitudeJndPage> {
       mergeExperimentIntoSummary(
         _runner.summaryJson(),
         experimentKind: kExperimentAmplitudeJnd,
-        experimentTitle: 'Amplitude JND',
+        experimentTitle: 'Amplitude Just Noticeable Difference',
       ),
     );
   }
@@ -339,7 +339,7 @@ class _AmplitudeJndPageState extends State<AmplitudeJndPage> {
         : null;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Amplitude JND')),
+      appBar: AppBar(title: const Text('Amplitude Just Noticeable Difference')),
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),

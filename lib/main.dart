@@ -131,7 +131,7 @@ class TrialHomePage extends StatelessWidget {
                       ),
                     );
                   },
-                  child: const Text('Pitch JND'),
+                  child: const Text('Pitch Just Noticeable Difference'),
                 ),
                 const SizedBox(height: 12),
                 FilledButton(
@@ -142,7 +142,7 @@ class TrialHomePage extends StatelessWidget {
                       ),
                     );
                   },
-                  child: const Text('Amplitude JND'),
+                  child: const Text('Amplitude Just Noticeable Difference'),
                 ),
                 const SizedBox(height: 20),
                 Text('All Outcomes and Charts', style: _sectionTitle(context)),

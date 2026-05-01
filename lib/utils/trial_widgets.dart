@@ -8,6 +8,51 @@ import 'outcomes.dart';
 import 'session_time.dart';
 import 'trial_framework.dart';
 
+/// Y-axis tick labels sit just left of [axisX]. Keeps numbers off the plot area.
+void _chartPaintTickRightOfAxis(
+  Canvas canvas,
+  TextStyle style,
+  double axisX,
+  double top,
+  String text,
+) {
+  final tp = TextPainter(
+    text: TextSpan(text: text, style: style),
+    textDirection: TextDirection.ltr,
+  )..layout(maxWidth: 72);
+  tp.paint(canvas, Offset(axisX - 6 - tp.width, top));
+}
+
+/// X-axis caption centered under the plot.
+void _chartPaintXAxisCaptionCentered(
+  Canvas canvas,
+  TextStyle style,
+  Rect chart,
+  String text,
+) {
+  final tp = TextPainter(
+    text: TextSpan(text: text, style: style),
+    textDirection: TextDirection.ltr,
+  )..layout(maxWidth: chart.width);
+  tp.paint(canvas, Offset(chart.left + (chart.width - tp.width) / 2, chart.bottom + 4));
+}
+
+/// Compact legend inside plot bounds (top-right), multi-line if needed.
+void _chartPaintLegendTopRight(
+  Canvas canvas,
+  TextStyle style,
+  Rect chart,
+  String text,
+  double maxWidth,
+) {
+  final tp = TextPainter(
+    text: TextSpan(text: text, style: style),
+    textDirection: TextDirection.ltr,
+    textAlign: TextAlign.right,
+  )..layout(maxWidth: maxWidth);
+  tp.paint(canvas, Offset(chart.right - tp.width - 4, chart.top + 4));
+}
+
 class SessionStatsBar extends StatelessWidget {
   const SessionStatsBar({
     super.key,
@@ -250,9 +295,9 @@ class _OutcomesChartPainter extends CustomPainter {
     final maxRt = rts.reduce((a, b) => a > b ? a : b);
     final span = (maxRt - minRt).clamp(1, 1 << 30);
 
-    final leftPad = 34.0;
-    final bottomPad = 18.0;
-    final topPad = 10.0;
+    const leftPad = 46.0;
+    const bottomPad = 22.0;
+    const topPad = 12.0;
     final chart = Rect.fromLTWH(
       leftPad,
       topPad,
@@ -266,19 +311,10 @@ class _OutcomesChartPainter extends CustomPainter {
     canvas.drawLine(chart.bottomLeft, chart.bottomRight, axisPaint);
     canvas.drawLine(chart.bottomLeft, chart.topLeft, axisPaint);
 
-    _drawText(
-      canvas,
-      Offset(chart.left + 4, chart.bottom - 10),
-      '${minRt}ms',
-    );
-    _drawText(
-      canvas,
-      Offset(chart.left + 4, chart.top - 4),
-      '${maxRt}ms',
-    );
+    _chartPaintTickRightOfAxis(canvas, textStyle, chart.left, chart.top + 2, '$maxRt ms');
+    _chartPaintTickRightOfAxis(canvas, textStyle, chart.left, chart.bottom - 14, '$minRt ms');
 
-    _drawText(canvas, Offset(chart.left + chart.width / 2 - 16, chart.bottom + 2), 'Trial');
-    _drawText(canvas, Offset(8, chart.top + chart.height / 2 - 6), 'ms');
+    _chartPaintXAxisCaptionCentered(canvas, textStyle, chart, 'Trial');
 
     final n = outcomes.length;
     if (n == 1) {
@@ -411,7 +447,7 @@ class StaircaseChart extends StatelessWidget {
   final double? thresholdSd;
 
   /// Unit label shown on axis tick marks and the threshold annotation.
-  /// e.g. 'ms' for gap detection, 'Hz' for pitch JND, 'dB' for amplitude JND.
+  /// e.g. 'ms' for gap detection, 'Hz' for Pitch Just Noticeable Difference, 'dB' for Amplitude Just Noticeable Difference.
   final String yAxisLabel;
   final double height;
 
@@ -482,9 +518,10 @@ class _StaircaseChartPainter extends CustomPainter {
     final maxLevel = levelsHistory.reduce((a, b) => a > b ? a : b);
     final span = (maxLevel - minLevel).clamp(1e-6, double.infinity);
 
-    const leftPad = 42.0;
-    const bottomPad = 18.0;
-    const topPad = 10.0;
+    const leftPad = 48.0;
+    const bottomPad = 22.0;
+    final mean = threshold;
+    final topPad = mean != null ? 22.0 : 14.0;
     final chart = Rect.fromLTWH(
       leftPad,
       topPad,
@@ -498,14 +535,22 @@ class _StaircaseChartPainter extends CustomPainter {
     canvas.drawLine(chart.bottomLeft, chart.bottomRight, axisPaint);
     canvas.drawLine(chart.bottomLeft, chart.topLeft, axisPaint);
 
-    // Axis labels
-    _drawText(canvas, Offset(chart.left + chart.width / 2 - 16, chart.bottom + 2), 'Trial');
-    _drawText(canvas, Offset(0, chart.top + chart.height / 2 - 6), yAxisLabel);
+    _chartPaintTickRightOfAxis(
+      canvas,
+      textStyle,
+      chart.left,
+      chart.top + 2,
+      '${maxLevel.toStringAsFixed(1)} $yAxisLabel',
+    );
+    _chartPaintTickRightOfAxis(
+      canvas,
+      textStyle,
+      chart.left,
+      chart.bottom - 14,
+      '${minLevel.toStringAsFixed(1)} $yAxisLabel',
+    );
 
-    _drawText(canvas, Offset(0, chart.bottom - 8), '${minLevel.toStringAsFixed(1)}$yAxisLabel');
-    _drawText(canvas, Offset(0, chart.top - 4), '${maxLevel.toStringAsFixed(1)}$yAxisLabel');
-
-    final mean = threshold;
+    _chartPaintXAxisCaptionCentered(canvas, textStyle, chart, 'Trial');
     final sd = thresholdSd;
     if (mean != null) {
       final yMean = chart.bottom - ((mean - minLevel) / span) * chart.height;
@@ -521,22 +566,10 @@ class _StaircaseChartPainter extends CustomPainter {
         gap: 5,
       );
 
-      // Plot the detected value (score) directly on the graph.
-      canvas.drawCircle(
-        Offset(chart.left, yMean),
-        4,
-        Paint()..color = const Color(0xFF7E57C2),
-      );
-      _drawText(
-        canvas,
-        Offset(chart.left + 6, yMean - 12),
-        '${mean.toStringAsFixed(1)}$yAxisLabel',
-      );
-
-      final label = sd == null
-          ? 'Estimated threshold ${mean.toStringAsFixed(1)}$yAxisLabel'
-          : 'Estimated threshold ${mean.toStringAsFixed(1)}$yAxisLabel (sd ${sd.toStringAsFixed(1)}$yAxisLabel)';
-      _drawText(canvas, Offset(chart.left + 6, chart.top - 2), label);
+      final legend = sd == null
+          ? 'Threshold ${mean.toStringAsFixed(1)} $yAxisLabel'
+          : 'Threshold ${mean.toStringAsFixed(1)} $yAxisLabel (±${sd.toStringAsFixed(1)})';
+      _chartPaintLegendTopRight(canvas, textStyle, chart, legend, min(140.0, chart.width * 0.52));
     }
 
     final n = levelsHistory.length;
@@ -584,14 +617,6 @@ class _StaircaseChartPainter extends CustomPainter {
         canvas.drawCircle(points[i], 6, reversalRingPaint);
       }
     }
-  }
-
-  void _drawText(Canvas canvas, Offset offset, String text) {
-    final tp = TextPainter(
-      text: TextSpan(text: text, style: textStyle),
-      textDirection: TextDirection.ltr,
-    )..layout(maxWidth: 160);
-    tp.paint(canvas, offset);
   }
 
   void _drawDashedLine(

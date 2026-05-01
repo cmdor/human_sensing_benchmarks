@@ -145,8 +145,8 @@ String _sessionMetricsLine(StoredSession s) {
 String _trialExperimentShortLabel(StoredSession session) {
   return switch (_inferExperimentKind(session)) {
     _InferredExperimentKind.soundGap => 'Sound Gap Detection',
-    _InferredExperimentKind.pitchJnd => 'Pitch JND',
-    _InferredExperimentKind.amplitudeJnd => 'Amplitude JND',
+    _InferredExperimentKind.pitchJnd => 'Pitch Just Noticeable Difference',
+    _InferredExperimentKind.amplitudeJnd => 'Amplitude Just Noticeable Difference',
     _InferredExperimentKind.contrastFinder => 'Contrast Finder',
     _InferredExperimentKind.eRotation => 'E Rotation Trial',
     _InferredExperimentKind.pitchFrequencyRange => 'Pitch Frequency Range',
