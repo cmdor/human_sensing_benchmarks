@@ -36,6 +36,30 @@ double contrastAfterCorrectLogStep(
   return (current * stepFactor).clamp(0.0, 1.0);
 }
 
+/// Failure-level contrast in [0, 1], [thresholdPct] in percent (0–100),
+/// [logContrastSensitivity] = log10(100 / threshold_pct), and [bitDepthEst]
+/// from ceil(log2(100 / max(threshold_pct, 1e-6))), floored at 1 bit.
+({
+  double thresholdContrast,
+  double thresholdPct,
+  double logContrastSensitivity,
+  int bitDepthEst,
+}) contrastBitDepthEstimate({
+  required double thresholdContrast,
+}) {
+  final clamped = thresholdContrast.clamp(0.0, 1.0);
+  final thresholdPct = clamped * 100.0;
+  final safePct = max(thresholdPct, 1e-6);
+  final logContrastSensitivity = log(100.0 / safePct) / ln10;
+  final bitDepthEst = max(1, (log(100.0 / safePct) / ln2).ceil());
+  return (
+    thresholdContrast: clamped,
+    thresholdPct: thresholdPct,
+    logContrastSensitivity: logContrastSensitivity,
+    bitDepthEst: bitDepthEst,
+  );
+}
+
 TrialGenerator<ContrastTrial> buildContrastGenerator(Random random) {
   return (state) {
     final contrast = (state.custom['contrast'] as double?) ?? 1.0;

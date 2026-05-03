@@ -437,6 +437,7 @@ class StaircaseChart extends StatelessWidget {
     required this.correct,
     this.threshold,
     this.thresholdSd,
+    this.thresholdAnnotation,
     this.yAxisLabel = 'ms',
     this.height = 160,
   });
@@ -445,6 +446,9 @@ class StaircaseChart extends StatelessWidget {
   final List<bool> correct;
   final double? threshold;
   final double? thresholdSd;
+
+  /// Appended to the threshold legend in parentheses, e.g. `'bit depth 5'`.
+  final String? thresholdAnnotation;
 
   /// Unit label shown on axis tick marks and the threshold annotation.
   /// e.g. 'ms' for gap detection, 'Hz' for Pitch Just Noticeable Difference, 'dB' for Amplitude Just Noticeable Difference.
@@ -478,6 +482,7 @@ class StaircaseChart extends StatelessWidget {
                   const TextStyle(fontSize: 11),
               threshold: threshold,
               thresholdSd: thresholdSd,
+              thresholdAnnotation: thresholdAnnotation,
               yAxisLabel: yAxisLabel,
             ),
           ),
@@ -497,6 +502,7 @@ class _StaircaseChartPainter extends CustomPainter {
     required this.textStyle,
     required this.threshold,
     required this.thresholdSd,
+    this.thresholdAnnotation,
     required this.yAxisLabel,
   });
 
@@ -508,6 +514,7 @@ class _StaircaseChartPainter extends CustomPainter {
   final TextStyle textStyle;
   final double? threshold;
   final double? thresholdSd;
+  final String? thresholdAnnotation;
   final String yAxisLabel;
 
   @override
@@ -566,9 +573,12 @@ class _StaircaseChartPainter extends CustomPainter {
         gap: 5,
       );
 
-      final legend = sd == null
+      final ann = thresholdAnnotation;
+      final baseLegend = sd == null
           ? 'Threshold ${mean.toStringAsFixed(1)} $yAxisLabel'
           : 'Threshold ${mean.toStringAsFixed(1)} $yAxisLabel (±${sd.toStringAsFixed(1)})';
+      final legend =
+          ann == null || ann.isEmpty ? baseLegend : '$baseLegend ($ann)';
       _chartPaintLegendTopRight(canvas, textStyle, chart, legend, min(140.0, chart.width * 0.52));
     }
 
@@ -656,6 +666,7 @@ class _StaircaseChartPainter extends CustomPainter {
         oldDelegate.textStyle != textStyle ||
         oldDelegate.threshold != threshold ||
         oldDelegate.thresholdSd != thresholdSd ||
+        oldDelegate.thresholdAnnotation != thresholdAnnotation ||
         oldDelegate.yAxisLabel != yAxisLabel;
   }
 }

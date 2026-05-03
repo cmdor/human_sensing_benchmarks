@@ -18,6 +18,7 @@ import '../utils/trial_framework.dart';
 import '../utils/trial_widgets.dart';
 import '../sound/amplitude_jnd_levels.dart';
 import 'angular_resolution.dart' show eRotationVisualAngle, kDefaultViewingDistanceMm;
+import 'contrast_trial.dart' show contrastBitDepthEstimate;
 
 _StaircaseSessionLabels _staircaseLabelsForSession(StoredSession session) {
   final kind = _inferExperimentKind(session);
@@ -43,6 +44,10 @@ _StaircaseSessionLabels _staircaseLabelsForSession(StoredSession session) {
         yAxisLabel: 'arcmin',
       );
     case _InferredExperimentKind.contrastFinder:
+      return const _StaircaseSessionLabels(
+        sectionTitle: 'Contrast staircase (% per trial)',
+        yAxisLabel: '%',
+      );
     case _InferredExperimentKind.pitchFrequencyRange:
     case _InferredExperimentKind.unknown:
       return const _StaircaseSessionLabels(
@@ -217,6 +222,7 @@ class _DerivedSessionView {
     required this.correct,
     required this.chartThreshold,
     required this.chartThresholdSd,
+    this.chartThresholdAnnotation,
     required this.chartYAxis,
   });
 
@@ -227,6 +233,7 @@ class _DerivedSessionView {
   final List<bool> correct;
   final double? chartThreshold;
   final double? chartThresholdSd;
+  final String? chartThresholdAnnotation;
   final String chartYAxis;
 }
 
@@ -251,6 +258,7 @@ _DerivedSessionView _deriveSessionView(StoredSession session) {
   List<bool> chartCorrect = List<bool>.from(correct);
   double? chartThreshold = thresholdLin;
   double? chartSd = thresholdSdLin;
+  String? chartThresholdAnnotation;
   var chartYAxis = staircaseLabels.yAxisLabel;
 
   if (experimentKind == _InferredExperimentKind.amplitudeJnd) {
@@ -306,6 +314,45 @@ _DerivedSessionView _deriveSessionView(StoredSession session) {
     chartYAxis = 'arcmin';
   }
 
+  if (experimentKind == _InferredExperimentKind.contrastFinder) {
+    chartThreshold = null;
+    chartSd = null;
+    chartThresholdAnnotation = null;
+
+    final pctHistory = <double>[];
+    final correctHistory = <bool>[];
+    for (final o in outcomes) {
+      final c = o.details['contrast'];
+      if (c is! num) continue;
+      pctHistory.add(c.toDouble() * 100.0);
+      correctHistory.add(o.correct);
+    }
+    chartLevels = pctHistory;
+    chartCorrect = correctHistory;
+    chartYAxis = '%';
+
+    final savedPct = session.summary['thresholdPct'];
+    final savedContrast = session.summary['thresholdContrast'];
+    final savedBitDepth = session.summary['bitDepthEst'];
+    if (savedPct is num) {
+      chartThreshold = savedPct.toDouble();
+    } else if (savedContrast is num) {
+      chartThreshold = contrastBitDepthEstimate(
+        thresholdContrast: savedContrast.toDouble(),
+      ).thresholdPct;
+    }
+    if (savedBitDepth is int) {
+      chartThresholdAnnotation = 'bit depth $savedBitDepth';
+    } else if (savedBitDepth is num) {
+      chartThresholdAnnotation = 'bit depth ${savedBitDepth.toInt()}';
+    } else if (chartThreshold != null) {
+      final est = contrastBitDepthEstimate(
+        thresholdContrast: chartThreshold / 100.0,
+      );
+      chartThresholdAnnotation = 'bit depth ${est.bitDepthEst}';
+    }
+  }
+
   final hasStaircase =
       chartLevels.isNotEmpty && chartLevels.length == chartCorrect.length;
 
@@ -317,6 +364,7 @@ _DerivedSessionView _deriveSessionView(StoredSession session) {
     correct: chartCorrect,
     chartThreshold: chartThreshold,
     chartThresholdSd: chartSd,
+    chartThresholdAnnotation: chartThresholdAnnotation,
     chartYAxis: chartYAxis,
   );
 }
@@ -617,6 +665,8 @@ class _SessionDetailPageState extends State<SessionDetailPage> {
           const SizedBox(height: 12),
           if (_inferExperimentKind(session) == _InferredExperimentKind.eRotation)
             _ERotationAcuityCard(session: session),
+          if (_inferExperimentKind(session) == _InferredExperimentKind.contrastFinder)
+            _ContrastBitDepthCard(session: session),
           const Text(
             'Per-trial outcomes',
             style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
@@ -635,6 +685,7 @@ class _SessionDetailPageState extends State<SessionDetailPage> {
                     correct: v.correct,
                     threshold: v.chartThreshold,
                     thresholdSd: v.chartThresholdSd,
+                    thresholdAnnotation: v.chartThresholdAnnotation,
                     yAxisLabel: v.chartYAxis,
                   ),
                 ],
@@ -727,6 +778,7 @@ Future<List<Uint8List>> _captureSessionChartPngs(
                           correct: v.correct,
                           threshold: v.chartThreshold,
                           thresholdSd: v.chartThresholdSd,
+                          thresholdAnnotation: v.chartThresholdAnnotation,
                           yAxisLabel: v.chartYAxis,
                         ),
                       ],
@@ -863,6 +915,97 @@ pw.Widget _pdfSingleSessionSummaryAndChartsPage({
         ),
     ],
   );
+}
+
+// ── Contrast Finder: threshold and bit depth card ───────────────────────────
+
+class _ContrastBitDepthCard extends StatelessWidget {
+  const _ContrastBitDepthCard({required this.session});
+
+  final StoredSession session;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final s = session.summary;
+
+    final rawTc = s['thresholdContrast'];
+    final rawTp = s['thresholdPct'];
+    if (rawTc is! num && rawTp is! num) {
+      return Card(
+        margin: const EdgeInsets.only(bottom: 16),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Contrast threshold and bit depth',
+                style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                'Threshold and bit-depth fields were not stored for this session.\n'
+                'Re-run Contrast Finder to record them.',
+                style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final thresholdContrast = rawTc is num
+        ? rawTc.toDouble()
+        : (rawTp as num).toDouble() / 100.0;
+    final est = contrastBitDepthEstimate(thresholdContrast: thresholdContrast);
+
+    final thresholdPct = rawTp is num ? rawTp.toDouble() : est.thresholdPct;
+    final logCs = s['logContrastSensitivity'] is num
+        ? (s['logContrastSensitivity'] as num).toDouble()
+        : est.logContrastSensitivity;
+    final bitDepth = s['bitDepthEst'] is num
+        ? (s['bitDepthEst'] as num).toInt()
+        : est.bitDepthEst;
+    final levels = 1 << bitDepth;
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 16),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Contrast threshold and bit depth',
+              style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 10),
+            _AcuityRow(
+              label: 'Threshold contrast',
+              value:
+                  '${thresholdPct.toStringAsFixed(2)}%  '
+                  '(${thresholdContrast.toStringAsFixed(4)} mix)',
+            ),
+            _AcuityRow(
+              label: 'log10(100 / threshold%)',
+              value: logCs.toStringAsFixed(3),
+            ),
+            _AcuityRow(
+              label: 'Bit depth (est.)',
+              value: '$bitDepth',
+              bold: true,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Roughly $levels distinguishable contrast levels (2^$bitDepth).',
+              style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 // ── E Rotation: visual acuity metric card ────────────────────────────────────
