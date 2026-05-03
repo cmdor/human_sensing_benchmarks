@@ -266,8 +266,11 @@ class _ERotationTrialPageState extends State<_ERotationTrialPage> {
   bool _savedSession = false;
   final SessionStore _store = SessionStore();
 
-  /// Cached calibration (defaults until SharedPreferences loads).
+  /// Cached calibration (set before the first trial is presented).
   double? _mmPerLogicalPixel;
+
+  /// False until [loadMmPerLogicalPixel] completes and [_runner.start] runs.
+  bool _sessionReady = false;
 
   /// Live arc-minute history for [StaircaseChart] (updates each guess).
   List<double> _acuityArcMinHistory = const <double>[];
@@ -280,13 +283,17 @@ class _ERotationTrialPageState extends State<_ERotationTrialPage> {
   void initState() {
     super.initState();
     _runner = _newRunner();
-    _runner.start();
-    unawaited(
-      loadMmPerLogicalPixel().then((mm) {
-        if (!mounted) return;
-        setState(() => _mmPerLogicalPixel = mm);
-      }),
-    );
+    unawaited(_loadCalibrationAndStart());
+  }
+
+  Future<void> _loadCalibrationAndStart() async {
+    final mm = await loadMmPerLogicalPixel();
+    if (!mounted) return;
+    setState(() {
+      _mmPerLogicalPixel = mm;
+      _runner.start();
+      _sessionReady = true;
+    });
   }
 
   TrialRunner<ERotationTrial, ERotationGuess> _newRunner() {
@@ -302,6 +309,7 @@ class _ERotationTrialPageState extends State<_ERotationTrialPage> {
   }
 
   void _submitGuess(double rotationDegrees) {
+    if (!_sessionReady || _mmPerLogicalPixel == null) return;
     if (_runner.state.finished) return;
 
     final trial = _runner.currentTrial;
@@ -309,8 +317,7 @@ class _ERotationTrialPageState extends State<_ERotationTrialPage> {
       ERotationGuess(rotationDegrees: rotationDegrees, geometry: _lastGeometry),
     );
 
-    final mmPerPx =
-        _mmPerLogicalPixel ?? kMacBookPro16MmPerLogicalPixel;
+    final mmPerPx = _mmPerLogicalPixel!;
     final arcMinThisTrial = eRotationVisualAngle(
       scale: trial.scale,
       mmPerLogicalPixel: mmPerPx,
@@ -388,6 +395,7 @@ class _ERotationTrialPageState extends State<_ERotationTrialPage> {
       _lastGeometry = null;
       _runner = _newRunner();
       _runner.start();
+      _sessionReady = true;
       _status = 'Which way is the E rotated?';
       _outcomes = const <TrialOutcome>[];
       _savedSession = false;
@@ -399,6 +407,22 @@ class _ERotationTrialPageState extends State<_ERotationTrialPage> {
 
   @override
   Widget build(BuildContext context) {
+    if (!_sessionReady) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('E Rotation Trial')),
+        body: const Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 16),
+              Text('Loading screen calibration…'),
+            ],
+          ),
+        ),
+      );
+    }
+
     final trial = _runner.currentTrial;
     final paint = Paint()
       ..color = Theme.of(context).colorScheme.onSurface

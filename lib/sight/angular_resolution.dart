@@ -32,14 +32,15 @@ const double kDefaultViewingDistanceMm = kDefaultViewingDistanceInches * kInches
 /// Mirrors the first two lines of [drawBlockE] exactly so the physics
 /// computation stays in sync with the painter geometry.
 ///
-///   baseThickness   = canvasShortestSide × strokeFraction
+///   baseThickness   = clamp(canvasShortestSide × strokeFraction, 1, canvasShortestSide)
 ///   scaledThickness = baseThickness × scale
 double forkThicknessLogicalPx({
   required double canvasShortestSide,
   required double strokeFraction,
   required double scale,
 }) {
-  final baseThickness = canvasShortestSide * strokeFraction;
+  final baseThickness =
+      (canvasShortestSide * strokeFraction).clamp(1.0, canvasShortestSide);
   final scaledThickness = baseThickness * scale;
   return scaledThickness;
 }
