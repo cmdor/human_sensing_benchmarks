@@ -266,11 +266,27 @@ class _ERotationTrialPageState extends State<_ERotationTrialPage> {
   bool _savedSession = false;
   final SessionStore _store = SessionStore();
 
+  /// Cached calibration (defaults until SharedPreferences loads).
+  double? _mmPerLogicalPixel;
+
+  /// Live arc-minute history for [StaircaseChart] (updates each guess).
+  List<double> _acuityArcMinHistory = const <double>[];
+  List<bool> _acuityCorrectHistory = const <bool>[];
+
+  /// Horizontal threshold line after run completes (threshold-scale arcmin).
+  double? _reportThresholdArcMin;
+
   @override
   void initState() {
     super.initState();
     _runner = _newRunner();
     _runner.start();
+    unawaited(
+      loadMmPerLogicalPixel().then((mm) {
+        if (!mounted) return;
+        setState(() => _mmPerLogicalPixel = mm);
+      }),
+    );
   }
 
   TrialRunner<ERotationTrial, ERotationGuess> _newRunner() {
@@ -293,7 +309,17 @@ class _ERotationTrialPageState extends State<_ERotationTrialPage> {
       ERotationGuess(rotationDegrees: rotationDegrees, geometry: _lastGeometry),
     );
 
+    final mmPerPx =
+        _mmPerLogicalPixel ?? kMacBookPro16MmPerLogicalPixel;
+    final arcMinThisTrial = eRotationVisualAngle(
+      scale: trial.scale,
+      mmPerLogicalPixel: mmPerPx,
+    ).arcMinutes;
+
     setState(() {
+      _acuityArcMinHistory = [..._acuityArcMinHistory, arcMinThisTrial];
+      _acuityCorrectHistory = [..._acuityCorrectHistory, score.correct];
+
       if (score.correct) {
         final nextScale = (_runner.state.custom['scale'] as double?) ?? trial.scale;
         _status = 'Correct. Next scale: ${nextScale.toStringAsFixed(4)}';
@@ -318,9 +344,6 @@ class _ERotationTrialPageState extends State<_ERotationTrialPage> {
     _savedSession = true;
 
     final outcomes = deriveOutcomes(_runner.report);
-    setState(() {
-      _outcomes = outcomes;
-    });
 
     // Compute visual angle at the threshold scale.
     // Scale at finish = the scale the participant failed twice at
@@ -331,6 +354,13 @@ class _ERotationTrialPageState extends State<_ERotationTrialPage> {
       scale: thresholdScale,
       mmPerLogicalPixel: mmPerLogicalPixel,
     );
+
+    if (!mounted) return;
+    setState(() {
+      _outcomes = outcomes;
+      _mmPerLogicalPixel = mmPerLogicalPixel;
+      _reportThresholdArcMin = acuity.arcMinutes;
+    });
 
     final baseSummary = _runner.summaryJson();
     final summaryWithAcuity = <String, Object?>{
@@ -361,6 +391,9 @@ class _ERotationTrialPageState extends State<_ERotationTrialPage> {
       _status = 'Which way is the E rotated?';
       _outcomes = const <TrialOutcome>[];
       _savedSession = false;
+      _acuityArcMinHistory = const <double>[];
+      _acuityCorrectHistory = const <bool>[];
+      _reportThresholdArcMin = null;
     });
   }
 
@@ -429,6 +462,24 @@ class _ERotationTrialPageState extends State<_ERotationTrialPage> {
                         enabled: !_runner.state.finished,
                         onGuess: _submitGuess,
                       ),
+                      if (_acuityArcMinHistory.isNotEmpty &&
+                          _acuityArcMinHistory.length ==
+                              _acuityCorrectHistory.length) ...[
+                        const SizedBox(height: 16),
+                        Text(
+                          'Visual acuity (arcmin)',
+                          style: Theme.of(context).textTheme.titleSmall
+                              ?.copyWith(fontWeight: FontWeight.w600),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 8),
+                        StaircaseChart(
+                          levelsHistory: _acuityArcMinHistory,
+                          correct: _acuityCorrectHistory,
+                          threshold: _reportThresholdArcMin,
+                          yAxisLabel: 'arcmin',
+                        ),
+                      ],
                       const SizedBox(height: 12),
                       ExportJsonButton(runner: _runner),
                       if (_runner.state.finished) OutcomesSummary(outcomes: _outcomes),

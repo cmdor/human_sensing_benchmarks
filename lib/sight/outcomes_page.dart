@@ -17,7 +17,7 @@ import '../utils/staircase.dart';
 import '../utils/trial_framework.dart';
 import '../utils/trial_widgets.dart';
 import '../sound/amplitude_jnd_levels.dart';
-import 'angular_resolution.dart' show kDefaultViewingDistanceMm;
+import 'angular_resolution.dart' show eRotationVisualAngle, kDefaultViewingDistanceMm;
 
 _StaircaseSessionLabels _staircaseLabelsForSession(StoredSession session) {
   final kind = _inferExperimentKind(session);
@@ -37,8 +37,12 @@ _StaircaseSessionLabels _staircaseLabelsForSession(StoredSession session) {
         sectionTitle: 'Staircase (amplitude Δ, louder envelope)',
         yAxisLabel: 'dB',
       );
-    case _InferredExperimentKind.contrastFinder:
     case _InferredExperimentKind.eRotation:
+      return const _StaircaseSessionLabels(
+        sectionTitle: 'Visual acuity (arc minutes per trial)',
+        yAxisLabel: 'arcmin',
+      );
+    case _InferredExperimentKind.contrastFinder:
     case _InferredExperimentKind.pitchFrequencyRange:
     case _InferredExperimentKind.unknown:
       return const _StaircaseSessionLabels(
@@ -244,6 +248,7 @@ _DerivedSessionView _deriveSessionView(StoredSession session) {
   final experimentKind = _inferExperimentKind(session);
 
   List<double> chartLevels = List<double>.from(levelHistory);
+  List<bool> chartCorrect = List<bool>.from(correct);
   double? chartThreshold = thresholdLin;
   double? chartSd = thresholdSdLin;
   var chartYAxis = staircaseLabels.yAxisLabel;
@@ -278,15 +283,38 @@ _DerivedSessionView _deriveSessionView(StoredSession session) {
     chartYAxis = 'dB';
   }
 
+  if (experimentKind == _InferredExperimentKind.eRotation) {
+    final mmPerPx = (session.summary['mmPerLogicalPixel'] as num?)?.toDouble() ??
+        kMacBookPro16MmPerLogicalPixel;
+    final arcMinHistory = <double>[];
+    final correctHistory = <bool>[];
+    for (final o in outcomes) {
+      final scale = o.details['scale'];
+      if (scale is! num) continue;
+      final acuity = eRotationVisualAngle(
+        scale: scale.toDouble(),
+        mmPerLogicalPixel: mmPerPx,
+      );
+      arcMinHistory.add(acuity.arcMinutes);
+      correctHistory.add(o.correct);
+    }
+    chartLevels = arcMinHistory;
+    chartCorrect = correctHistory;
+    chartThreshold =
+        (session.summary['visualAngleArcMinutes'] as num?)?.toDouble();
+    chartSd = null;
+    chartYAxis = 'arcmin';
+  }
+
   final hasStaircase =
-      levelHistory.isNotEmpty && levelHistory.length == correct.length;
+      chartLevels.isNotEmpty && chartLevels.length == chartCorrect.length;
 
   return _DerivedSessionView(
     outcomes: outcomes,
     hasStaircase: hasStaircase,
     staircaseLabels: staircaseLabels,
     chartLevels: chartLevels,
-    correct: correct,
+    correct: chartCorrect,
     chartThreshold: chartThreshold,
     chartThresholdSd: chartSd,
     chartYAxis: chartYAxis,
