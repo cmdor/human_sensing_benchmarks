@@ -14,6 +14,32 @@ void main() {
   runApp(const MyApp());
 }
 
+void showMedicalDisclaimerDialog(BuildContext context) {
+  showDialog<void>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text('Disclaimer'),
+      content: SingleChildScrollView(
+        child: Text(
+          'This app is for informal sensing and perception exploration only. '
+          'It is not for medical use: it does not diagnose, treat, screen for, '
+          'or assess any health condition. Results depend on your device(s) '
+          '(display, speakers, browser), calibration, room conditions, and how '
+          'you respond as a participant. Please do not use these outcomes for clinical '
+          'or medical decisions.',
+          style: Theme.of(ctx).textTheme.bodyMedium,
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(ctx).pop(),
+          child: const Text('Close'),
+        ),
+      ],
+    ),
+  );
+}
+
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
@@ -75,7 +101,13 @@ class TrialHomePage extends StatelessWidget {
                   textAlign: TextAlign.center,
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 12),
+                TextButton.icon(
+                  onPressed: () => showMedicalDisclaimerDialog(context),
+                  icon: const Icon(Icons.info_outline),
+                  label: const Text('Medical disclaimer'),
+                ),
+                const SizedBox(height: 12),
                 Text('Visual Trials', style: _sectionTitle(context)),
                 const SizedBox(height: 8),
                 OutlinedButton(
