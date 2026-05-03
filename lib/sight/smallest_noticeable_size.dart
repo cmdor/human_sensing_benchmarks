@@ -1,15 +1,18 @@
 // https://www.webvision.pitt.edu/book/part-viii-psychophysics-of-vision/visual-acuity/
 // Generate the letter 'E' and then gradually decrease the size of the letter until it is not noticeable.
+import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../utils/screen_calibration.dart';
 import '../utils/session_experiment_meta.dart';
 import '../utils/trial_framework.dart';
 import '../utils/outcomes.dart';
 import '../utils/session_store.dart';
 import '../utils/trial_widgets.dart';
+import 'angular_resolution.dart';
 
 class EGeometry {
   const EGeometry({
@@ -306,21 +309,44 @@ class _ERotationTrialPageState extends State<_ERotationTrialPage> {
     });
 
     if (_runner.state.finished) {
-      _onFinished();
+      unawaited(_onFinished());
     }
   }
 
-  void _onFinished() {
+  Future<void> _onFinished() async {
     if (_savedSession) return;
     _savedSession = true;
+
     final outcomes = deriveOutcomes(_runner.report);
     setState(() {
       _outcomes = outcomes;
     });
-    _store.appendSession(
+
+    // Compute visual angle at the threshold scale.
+    // Scale at finish = the scale the participant failed twice at
+    // (reducer never shrinks scale on wrong trials).
+    final thresholdScale = (_runner.state.custom['scale'] as double?) ?? 1.0;
+    final mmPerLogicalPixel = await loadMmPerLogicalPixel();
+    final acuity = eRotationVisualAngle(
+      scale: thresholdScale,
+      mmPerLogicalPixel: mmPerLogicalPixel,
+    );
+
+    final baseSummary = _runner.summaryJson();
+    final summaryWithAcuity = <String, Object?>{
+      ...baseSummary,
+      'forkThicknessLogicalPx': acuity.forkThicknessLogPx,
+      'forkThicknessMm': acuity.forkThicknessMm,
+      'mmPerLogicalPixel': mmPerLogicalPixel,
+      'viewingDistanceMm': kDefaultViewingDistanceMm,
+      'visualAngleRadians': acuity.angleRadians,
+      'visualAngleArcMinutes': acuity.arcMinutes,
+    };
+
+    await _store.appendSession(
       _runner.report,
       mergeExperimentIntoSummary(
-        _runner.summaryJson(),
+        summaryWithAcuity,
         experimentKind: kExperimentERotation,
         experimentTitle: 'E Rotation Trial',
       ),

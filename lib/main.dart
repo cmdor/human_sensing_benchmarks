@@ -8,6 +8,7 @@ import 'sound/pitch_frequency_range.dart';
 import 'sound/amplitude_jnd.dart';
 import 'sound/pitch_jnd.dart';
 import 'sound/sound_gap_detection.dart';
+import 'utils/screen_calibration_page.dart';
 
 void main() {
   runApp(const MyApp());
@@ -76,6 +77,17 @@ class TrialHomePage extends StatelessWidget {
                 ),
                 const SizedBox(height: 20),
                 Text('Visual Trials', style: _sectionTitle(context)),
+                const SizedBox(height: 8),
+                OutlinedButton(
+                  onPressed: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const ScreenCalibrationPage(),
+                      ),
+                    );
+                  },
+                  child: const Text('Calibrate Screen'),
+                ),
                 const SizedBox(height: 12),
                 FilledButton(
                   onPressed: () {

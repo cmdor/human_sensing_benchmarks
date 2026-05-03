@@ -10,12 +10,14 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 
 import '../utils/outcomes.dart';
+import '../utils/screen_calibration.dart';
 import '../utils/session_experiment_meta.dart';
 import '../utils/session_store.dart';
 import '../utils/staircase.dart';
 import '../utils/trial_framework.dart';
 import '../utils/trial_widgets.dart';
 import '../sound/amplitude_jnd_levels.dart';
+import 'angular_resolution.dart' show kDefaultViewingDistanceMm;
 
 _StaircaseSessionLabels _staircaseLabelsForSession(StoredSession session) {
   final kind = _inferExperimentKind(session);
@@ -132,7 +134,12 @@ String _sessionListSubtitle(StoredSession s) {
   final acc = s.summary['accuracy'];
   final total = s.summary['totalScored'];
   final label = _trialDisplayTitle(s);
-  return '$label  ·  accuracy: $acc  total: $total';
+  final base = '$label  ·  accuracy: $acc  total: $total';
+  final arcMin = s.summary['visualAngleArcMinutes'];
+  if (arcMin is num && _inferExperimentKind(s) == _InferredExperimentKind.eRotation) {
+    return '$base  ·  acuity: ${arcMin.toStringAsFixed(2)} arcmin';
+  }
+  return base;
 }
 
 String _sessionMetricsLine(StoredSession s) {
@@ -580,6 +587,8 @@ class _SessionDetailPageState extends State<SessionDetailPage> {
           Text('startedAt: ${session.startedAtIso}'),
           Text('finishedAt: ${session.finishedAtIso ?? '—'}'),
           const SizedBox(height: 12),
+          if (_inferExperimentKind(session) == _InferredExperimentKind.eRotation)
+            _ERotationAcuityCard(session: session),
           const Text(
             'Per-trial outcomes',
             style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
@@ -826,5 +835,127 @@ pw.Widget _pdfSingleSessionSummaryAndChartsPage({
         ),
     ],
   );
+}
+
+// ── E Rotation: visual acuity metric card ────────────────────────────────────
+
+class _ERotationAcuityCard extends StatelessWidget {
+  const _ERotationAcuityCard({required this.session});
+
+  final StoredSession session;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final s = session.summary;
+
+    final arcMin = s['visualAngleArcMinutes'];
+    final tLogPx = s['forkThicknessLogicalPx'];
+    final tMm = s['forkThicknessMm'];
+    final mmPerPx = s['mmPerLogicalPixel'];
+    final angleRad = s['visualAngleRadians'];
+    final distMm = s['viewingDistanceMm'] ?? kDefaultViewingDistanceMm;
+
+    final hasData = arcMin is num &&
+        tLogPx is num &&
+        tMm is num &&
+        mmPerPx is num &&
+        angleRad is num;
+
+    final isDefaultCalibration =
+        mmPerPx is num && (mmPerPx - kMacBookPro16MmPerLogicalPixel).abs() < 1e-9;
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 16),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Visual acuity threshold',
+              style: theme.textTheme.titleSmall
+                  ?.copyWith(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 10),
+            if (!hasData) ...[
+              Text(
+                'Acuity data not available for this session.\n'
+                'Re-run the E Rotation trial to record arc-minute results.',
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: theme.colorScheme.outline),
+              ),
+            ] else ...[
+              _AcuityRow(
+                label: 'Tine thickness',
+                value:
+                    '${(tLogPx as num).toStringAsFixed(2)} px'
+                    '  ×  ${(mmPerPx as num).toStringAsFixed(4)} mm/px'
+                    '  =  ${(tMm as num).toStringAsFixed(3)} mm',
+              ),
+              _AcuityRow(
+                label: 'Visual angle',
+                value:
+                    'atan(${(tMm as num).toStringAsFixed(3)} / ${(distMm as num).toStringAsFixed(1)})'
+                    '  =  ${(angleRad as num).toStringAsExponential(3)} rad',
+              ),
+              _AcuityRow(
+                label: 'Arc minutes',
+                value: '${(arcMin as num).toStringAsFixed(2)} arcmin',
+                bold: true,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Viewing distance: ${(distMm as num).toStringAsFixed(1)} mm'
+                '  (${((distMm as num) / 25.4).toStringAsFixed(1)} in)'
+                '    ·    ${(mmPerPx as num).toStringAsFixed(4)} mm/px'
+                '${isDefaultCalibration ? '  (MacBook Pro 16" default)' : '  (calibrated)'}',
+                style: theme.textTheme.labelSmall
+                    ?.copyWith(color: theme.colorScheme.outline),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AcuityRow extends StatelessWidget {
+  const _AcuityRow({required this.label, required this.value, this.bold = false});
+
+  final String label;
+  final String value;
+  final bool bold;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 120,
+            child: Text(
+              label,
+              style: theme.textTheme.bodySmall
+                  ?.copyWith(color: theme.colorScheme.outline),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontWeight: bold ? FontWeight.w700 : FontWeight.normal,
+                fontFamily: 'monospace',
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
