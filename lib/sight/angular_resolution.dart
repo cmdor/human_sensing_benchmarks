@@ -21,7 +21,9 @@ const double kERotationCanvasSize = 240.0;
 const double kERotationStrokeFraction = 0.2;
 
 /// Default viewing distance: 24 inches expressed in mm.
-const double kDefaultViewingDistanceMm = 609.6;
+const double kDefaultViewingDistanceInches = 24.0;
+const double kInchesToMm = 25.4;
+const double kDefaultViewingDistanceMm = kDefaultViewingDistanceInches * kInchesToMm;
 
 // ── Step 1 ───────────────────────────────────────────────────────────────────
 
