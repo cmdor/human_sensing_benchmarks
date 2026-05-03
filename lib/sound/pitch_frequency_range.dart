@@ -48,6 +48,9 @@ class _PitchFrequencyRangePageState extends State<PitchFrequencyRangePage> {
   bool _savedSession = false;
   String _status = 'Adjust the sliders to find your lowest/highest audible pitch.';
 
+  double? _submittedLowHz;
+  double? _submittedHighHz;
+
   // Defaults for a typical hearing-range exploration (not a diagnosis tool).
   static const double _defaultMinHz = 20;
   static const double _defaultMaxHz = 20000;
@@ -92,7 +95,7 @@ class _PitchFrequencyRangePageState extends State<PitchFrequencyRangePage> {
             highHz <= trial.maxHz &&
             lowHz + _minGapHz <= highHz;
         return TrialScore(
-          // No ground truth: we treat submission as “correct” when it's valid.
+          // No ground truth: we treat submission as "correct" when it's valid.
           correct: valid,
           valid: valid,
           data: <String, Object?>{
@@ -121,15 +124,11 @@ class _PitchFrequencyRangePageState extends State<PitchFrequencyRangePage> {
   }
 
   static double _hzToUnit(double hz, {required double minHz, required double maxHz}) {
-    final ratio = maxHz / minHz;
-    if (ratio <= 1) return 0;
-    return log(hz / minHz) / log(ratio);
+    return pitchHzToUnit(hz, minHz: minHz, maxHz: maxHz);
   }
 
   static double _unitToHz(double t, {required double minHz, required double maxHz}) {
-    final ratio = maxHz / minHz;
-    if (ratio <= 1) return minHz;
-    return minHz * pow(ratio, t);
+    return pitchUnitToHz(t, minHz: minHz, maxHz: maxHz);
   }
 
   double _clampLow(double low) {
@@ -169,72 +168,11 @@ class _PitchFrequencyRangePageState extends State<PitchFrequencyRangePage> {
     required double lowHz,
     required double highHz,
   }) {
-    final lowT = _hzToUnit(lowHz, minHz: minHz, maxHz: maxHz).clamp(0.0, 1.0);
-    final highT = _hzToUnit(highHz, minHz: minHz, maxHz: maxHz).clamp(0.0, 1.0);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const Text(
-          'Audible range (approx.)',
-          textAlign: TextAlign.center,
-          style: TextStyle(fontWeight: FontWeight.w600),
-        ),
-        const SizedBox(height: 8),
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final w = constraints.maxWidth;
-            final lowX = w * lowT;
-            final highX = w * highT;
-
-            return SizedBox(
-              height: 36,
-              child: Stack(
-                children: [
-                  Positioned.fill(
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(10),
-                        gradient: const LinearGradient(
-                          colors: [
-                            Color(0xFF8B00FF), // violet
-                            Color(0xFF4B0082), // indigo
-                            Color(0xFF0000FF), // blue
-                            Color(0xFF00FF00), // green
-                            Color(0xFFFFFF00), // yellow
-                            Color(0xFFFF7F00), // orange
-                            Color(0xFFFF0000), // red
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                  Positioned(
-                    left: lowX - 1,
-                    top: 0,
-                    bottom: 0,
-                    child: Container(width: 2, color: Colors.black),
-                  ),
-                  Positioned(
-                    left: highX - 1,
-                    top: 0,
-                    bottom: 0,
-                    child: Container(width: 2, color: Colors.black),
-                  ),
-                ],
-              ),
-            );
-          },
-        ),
-        const SizedBox(height: 6),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text('${minHz.toStringAsFixed(0)} Hz'),
-            Text('${maxHz.toStringAsFixed(0)} Hz'),
-          ],
-        ),
-      ],
+    return PitchRangeSpectrumBar(
+      minHz: minHz,
+      maxHz: maxHz,
+      lowHz: lowHz,
+      highHz: highHz,
     );
   }
 
@@ -269,12 +207,19 @@ class _PitchFrequencyRangePageState extends State<PitchFrequencyRangePage> {
     final outcomes = deriveOutcomes(_runner.report);
     setState(() {
       _outcomes = outcomes;
+      _submittedLowHz = _lowHz;
+      _submittedHighHz = _highHz;
       _status = 'Finished.';
     });
+    final summaryWithRange = <String, Object?>{
+      ..._runner.summaryJson(),
+      'lowHz': _lowHz,
+      'highHz': _highHz,
+    };
     _store.appendSession(
       _runner.report,
       mergeExperimentIntoSummary(
-        _runner.summaryJson(),
+        summaryWithRange,
         experimentKind: kExperimentPitchFrequencyRange,
         experimentTitle: 'Pitch Frequency Range',
       ),
@@ -289,6 +234,8 @@ class _PitchFrequencyRangePageState extends State<PitchFrequencyRangePage> {
       _runner.start();
       _outcomes = const <TrialOutcome>[];
       _savedSession = false;
+      _submittedLowHz = null;
+      _submittedHighHz = null;
       _status = 'Adjust the sliders to find your lowest/highest audible pitch.';
     });
   }
@@ -377,6 +324,17 @@ class _PitchFrequencyRangePageState extends State<PitchFrequencyRangePage> {
                 ExportJsonButton(runner: _runner),
                 const SizedBox(height: 16),
                 Text(_status, textAlign: TextAlign.center),
+                if (_runner.state.finished &&
+                    _submittedLowHz != null &&
+                    _submittedHighHz != null) ...[
+                  const SizedBox(height: 12),
+                  _PitchRangeResultCard(
+                    lowHz: _submittedLowHz!,
+                    highHz: _submittedHighHz!,
+                    minHz: trial.minHz,
+                    maxHz: trial.maxHz,
+                  ),
+                ],
                 if (_runner.state.finished) OutcomesSummary(outcomes: _outcomes),
                 if (_runner.state.finished) ...[
                   const SizedBox(height: 12),
@@ -386,6 +344,227 @@ class _PitchFrequencyRangePageState extends State<PitchFrequencyRangePage> {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+/// Log-scale mapping: Hz → [0, 1].
+double pitchHzToUnit(double hz, {required double minHz, required double maxHz}) {
+  final ratio = maxHz / minHz;
+  if (ratio <= 1) return 0;
+  return log(hz / minHz) / log(ratio);
+}
+
+/// Log-scale mapping: [0, 1] → Hz.
+double pitchUnitToHz(double t, {required double minHz, required double maxHz}) {
+  final ratio = maxHz / minHz;
+  if (ratio <= 1) return minHz;
+  return minHz * pow(ratio, t);
+}
+
+// ── Public spectrum-bar widget ────────────────────────────────────────────────
+
+/// Rainbow spectrum bar with two marker lines at [lowHz] and [highHz].
+/// Positions are plotted on a log-frequency scale between [minHz] and [maxHz].
+class PitchRangeSpectrumBar extends StatelessWidget {
+  const PitchRangeSpectrumBar({
+    super.key,
+    required this.minHz,
+    required this.maxHz,
+    required this.lowHz,
+    required this.highHz,
+    this.showEdgeLabels = true,
+  });
+
+  final double minHz;
+  final double maxHz;
+  final double lowHz;
+  final double highHz;
+
+  /// Whether to show "20 Hz" / "20000 Hz" axis labels below the bar.
+  final bool showEdgeLabels;
+
+  @override
+  Widget build(BuildContext context) {
+    final lowT = pitchHzToUnit(lowHz, minHz: minHz, maxHz: maxHz).clamp(0.0, 1.0);
+    final highT = pitchHzToUnit(highHz, minHz: minHz, maxHz: maxHz).clamp(0.0, 1.0);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Text(
+          'Audible range (approx.)',
+          textAlign: TextAlign.center,
+          style: TextStyle(fontWeight: FontWeight.w600),
+        ),
+        const SizedBox(height: 8),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final w = constraints.maxWidth;
+            final lowX = w * lowT;
+            final highX = w * highT;
+
+            return SizedBox(
+              height: 36,
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(10),
+                        gradient: const LinearGradient(
+                          colors: [
+                            Color(0xFF8B00FF), // violet
+                            Color(0xFF4B0082), // indigo
+                            Color(0xFF0000FF), // blue
+                            Color(0xFF00FF00), // green
+                            Color(0xFFFFFF00), // yellow
+                            Color(0xFFFF7F00), // orange
+                            Color(0xFFFF0000), // red
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    left: lowX - 1,
+                    top: 0,
+                    bottom: 0,
+                    child: Container(width: 2, color: Colors.black),
+                  ),
+                  Positioned(
+                    left: highX - 1,
+                    top: 0,
+                    bottom: 0,
+                    child: Container(width: 2, color: Colors.black),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+        if (showEdgeLabels) ...[
+          const SizedBox(height: 6),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('${minHz.toStringAsFixed(0)} Hz'),
+              Text('${maxHz.toStringAsFixed(0)} Hz'),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+// ── Result card (live finish screen) ─────────────────────────────────────────
+
+class _PitchRangeResultCard extends StatelessWidget {
+  const _PitchRangeResultCard({
+    required this.lowHz,
+    required this.highHz,
+    required this.minHz,
+    required this.maxHz,
+  });
+
+  final double lowHz;
+  final double highHz;
+  final double minHz;
+  final double maxHz;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final span = highHz - lowHz;
+    final octaves = (lowHz > 0 && highHz > 0) ? log(highHz / lowHz) / ln2 : 0.0;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Submitted frequency range',
+              style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 10),
+            PitchRangeSpectrumBar(
+              minHz: minHz,
+              maxHz: maxHz,
+              lowHz: lowHz,
+              highHz: highHz,
+            ),
+            const SizedBox(height: 12),
+            _PitchRangeRow(
+              label: 'Low frequency',
+              value: '${lowHz.toStringAsFixed(0)} Hz',
+            ),
+            _PitchRangeRow(
+              label: 'High frequency',
+              value: '${highHz.toStringAsFixed(0)} Hz',
+            ),
+            _PitchRangeRow(
+              label: 'Span',
+              value: '${span.toStringAsFixed(0)} Hz',
+            ),
+            _PitchRangeRow(
+              label: 'Octaves',
+              value: octaves.toStringAsFixed(2),
+              bold: true,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Approx. ${octaves.toStringAsFixed(1)} octaves of audible range.',
+              style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PitchRangeRow extends StatelessWidget {
+  const _PitchRangeRow({
+    required this.label,
+    required this.value,
+    this.bold = false,
+  });
+
+  final String label;
+  final String value;
+  final bool bold;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 140,
+            child: Text(
+              label,
+              style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontWeight: bold ? FontWeight.w700 : FontWeight.normal,
+                fontFamily: 'monospace',
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

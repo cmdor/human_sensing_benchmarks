@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math' show log, ln2;
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -19,6 +20,7 @@ import '../utils/trial_widgets.dart';
 import '../sound/amplitude_jnd_levels.dart';
 import 'angular_resolution.dart' show eRotationVisualAngle, kDefaultViewingDistanceMm;
 import 'contrast_trial.dart' show contrastBitDepthEstimate;
+import '../sound/pitch_frequency_range.dart' show PitchRangeSpectrumBar;
 
 _StaircaseSessionLabels _staircaseLabelsForSession(StoredSession session) {
   final kind = _inferExperimentKind(session);
@@ -147,6 +149,13 @@ String _sessionListSubtitle(StoredSession s) {
   final arcMin = s.summary['visualAngleArcMinutes'];
   if (arcMin is num && _inferExperimentKind(s) == _InferredExperimentKind.eRotation) {
     return '$base  ·  acuity: ${arcMin.toStringAsFixed(2)} arcmin';
+  }
+  final lowHz = s.summary['lowHz'];
+  final highHz = s.summary['highHz'];
+  if (lowHz is num &&
+      highHz is num &&
+      _inferExperimentKind(s) == _InferredExperimentKind.pitchFrequencyRange) {
+    return '$base  ·  range: ${lowHz.toStringAsFixed(0)}–${highHz.toStringAsFixed(0)} Hz';
   }
   return base;
 }
@@ -596,6 +605,7 @@ class SessionDetailPage extends StatefulWidget {
 class _SessionDetailPageState extends State<SessionDetailPage> {
   final GlobalKey _staircaseChartKey = GlobalKey();
   final GlobalKey _outcomesChartKey = GlobalKey();
+  final GlobalKey _pitchRangeVizKey = GlobalKey();
 
   Future<void> _printGraphsOnlyToPdf() async {
     await Future<void>.delayed(const Duration(milliseconds: 32));
@@ -603,7 +613,13 @@ class _SessionDetailPageState extends State<SessionDetailPage> {
 
     final pngs = <Uint8List>[];
     final hasStaircase = _hasStaircaseData;
+    final isPitchRange = _inferExperimentKind(widget.session) ==
+        _InferredExperimentKind.pitchFrequencyRange;
 
+    if (isPitchRange) {
+      final b = await _repaintBoundaryToPng(_pitchRangeVizKey);
+      if (b != null) pngs.add(b);
+    }
     if (hasStaircase) {
       final b = await _repaintBoundaryToPng(_staircaseChartKey);
       if (b != null) pngs.add(b);
@@ -667,6 +683,18 @@ class _SessionDetailPageState extends State<SessionDetailPage> {
             _ERotationAcuityCard(session: session),
           if (_inferExperimentKind(session) == _InferredExperimentKind.contrastFinder)
             _ContrastBitDepthCard(session: session),
+          if (_inferExperimentKind(session) == _InferredExperimentKind.pitchFrequencyRange)
+            RepaintBoundary(
+              key: _pitchRangeVizKey,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _chartCaptureHeading(context, session, 'Frequency range'),
+                  _PitchRangeCard(session: session),
+                ],
+              ),
+            ),
           const Text(
             'Per-trial outcomes',
             style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
@@ -747,6 +775,9 @@ Future<List<Uint8List>> _captureSessionChartPngs(
   final v = _deriveSessionView(session);
   final staircaseKey = GlobalKey();
   final outcomesKey = GlobalKey();
+  final pitchRangeKey = GlobalKey();
+  final isPitchRange = _inferExperimentKind(session) ==
+      _InferredExperimentKind.pitchFrequencyRange;
 
   final overlayState = Overlay.of(context, rootOverlay: true);
 
@@ -765,6 +796,18 @@ Future<List<Uint8List>> _captureSessionChartPngs(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                if (isPitchRange)
+                  RepaintBoundary(
+                    key: pitchRangeKey,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _chartCaptureHeading(context, session, 'Frequency range'),
+                        _PitchRangeCard(session: session),
+                      ],
+                    ),
+                  ),
                 if (v.hasStaircase)
                   RepaintBoundary(
                     key: staircaseKey,
@@ -810,6 +853,10 @@ Future<List<Uint8List>> _captureSessionChartPngs(
 
   final out = <Uint8List>[];
   try {
+    if (isPitchRange) {
+      final b = await _repaintBoundaryToPng(pitchRangeKey);
+      if (b != null) out.add(b);
+    }
     if (v.hasStaircase) {
       final b = await _repaintBoundaryToPng(staircaseKey);
       if (b != null) out.add(b);
@@ -999,6 +1046,90 @@ class _ContrastBitDepthCard extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               'Roughly $levels distinguishable contrast levels (2^$bitDepth).',
+              style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Pitch Frequency Range: result card ───────────────────────────────────────
+
+class _PitchRangeCard extends StatelessWidget {
+  const _PitchRangeCard({required this.session});
+
+  final StoredSession session;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final s = session.summary;
+    final rawLow = s['lowHz'];
+    final rawHigh = s['highHz'];
+
+    if (rawLow is! num || rawHigh is! num) {
+      return Card(
+        margin: const EdgeInsets.only(bottom: 16),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Frequency range',
+                style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                'Range values were not stored for this session.\n'
+                'Re-run Pitch Frequency Range to record them.',
+                style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final lowHz = rawLow.toDouble();
+    final highHz = rawHigh.toDouble();
+    const minHz = 20.0;
+    const maxHz = 20000.0;
+    final span = highHz - lowHz;
+    final octaves = (lowHz > 0 && highHz > 0) ? log(highHz / lowHz) / ln2 : 0.0;
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 16),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Submitted frequency range',
+              style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 10),
+            PitchRangeSpectrumBar(
+              minHz: minHz,
+              maxHz: maxHz,
+              lowHz: lowHz,
+              highHz: highHz,
+            ),
+            const SizedBox(height: 12),
+            _AcuityRow(label: 'Low frequency', value: '${lowHz.toStringAsFixed(0)} Hz'),
+            _AcuityRow(label: 'High frequency', value: '${highHz.toStringAsFixed(0)} Hz'),
+            _AcuityRow(label: 'Span', value: '${span.toStringAsFixed(0)} Hz'),
+            _AcuityRow(
+              label: 'Octaves',
+              value: octaves.toStringAsFixed(2),
+              bold: true,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Approx. ${octaves.toStringAsFixed(1)} octaves of audible range.',
               style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline),
             ),
           ],
